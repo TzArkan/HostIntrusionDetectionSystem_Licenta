@@ -1,0 +1,46 @@
+/* Fundal consistent la scroll / overscroll — evită banda albă sus/jos */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: #0f172a !important;
+  overscroll-behavior-y: none;
+  overscroll-behavior-x: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+#react-entry-point,
+#_dash-app-content,
+#_dash-global-container,
+._dash-app-content,
+._dash-app-container {
+  background-color: #0f172a !important;
+  min-height: 100vh;
+}
+
+/* Scrollbar în ton cu tema */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #0f172a;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 6px;
+  border: 2px solid #0f172a;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}

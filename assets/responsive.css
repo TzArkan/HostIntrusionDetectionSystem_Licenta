@@ -1,0 +1,56 @@
+/* Responsive layout for dashboard pages */
+
+@media (max-width: 1200px) {
+  #tab-content {
+    padding: 20px 18px 24px 18px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  #sidebar-toggle-btn {
+    display: inline-block !important;
+    background: #1e40af;
+    color: #dbeafe;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  #app-sidebar {
+    transform: translateX(-105%);
+    transition: transform 0.2s ease;
+    box-shadow: 0 0 0 transparent !important;
+  }
+
+  #app-sidebar.sidebar-open {
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.35) !important;
+  }
+
+  #app-content.content-with-sidebar,
+  #app-content.content-full {
+    margin-left: 0 !important;
+  }
+
+  #tab-content {
+    padding-top: 48px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  #tab-content {
+    padding: 54px 10px 16px 10px !important;
+    max-width: 100% !important;
+  }
+
+  .dash-table-container {
+    font-size: 11px;
+  }
+}
+
