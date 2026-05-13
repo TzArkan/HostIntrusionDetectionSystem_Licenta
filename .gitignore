@@ -1,0 +1,18 @@
+# Baze de date SQLite si jurnale WAL
+*.db
+*.db-wal
+*.db-shm
+hids_data/
+
+# Model Machine Learning
+*.pkl
+
+# Baze de date GeoIP
+geoip/*.mmdb
+
+# Fisiere cache si medii virtuale Python
+__pycache__/
+*.pyc
+venv/
+env/
+.env
