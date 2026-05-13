@@ -1,8 +1,9 @@
 """
-dashboard_statistici.py - Sectiunea Statistici: KPI-uri alerte + grafice trafic.
+dashboard_statistici.py - Sectiunea Statistici: KPI-uri alerte + grafice trafic
++ statistici per IP (dupa grafice).
 """
 from datetime import datetime
-from dash import dcc, html
+from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output
 import plotly.graph_objects as go
 
@@ -10,6 +11,7 @@ from dashboard_utils import (
     card, sectiune_titlu, PLOTLY_LAYOUT,
     ACCENT, MUTED, TEXT, BORDER, CARD,
     PROTO_CULORI,
+    style_header_tabel, style_cell_tabel,
 )
 
 
@@ -86,6 +88,30 @@ class SecțiuneStatistici:
             ], style={"display": "grid",
                       "gridTemplateColumns": "1fr 1fr", "gap": "12px"}),
 
+            card([
+                sectiune_titlu(
+                    f"Statistici per IP (IP gazdă exclus: {self.ip_gazda})"),
+                html.P(
+                    "Agregat după aceeași sursă ca graficele (filtru interfață de mai sus).",
+                    style={"fontSize": "11px", "color": MUTED, "margin": "0 0 10px 0"},
+                ),
+                dash_table.DataTable(
+                    id=f"{p}-stats-ip",
+                    columns=[{"name": n, "id": i} for n, i in [
+                        ("IP", "ip"),
+                        ("Pkt. Trimise", "pachete_trimise"),
+                        ("Pkt. Primite", "pachete_primite"),
+                        ("Total Pkt.", "pachete_total"),
+                        ("MB Trimisi", "mb_trimisi"),
+                        ("MB Primiti", "mb_primiti"),
+                        ("Medie B/pkt", "medie_bytes_pachet")]],
+                    data=[], page_size=20, sort_action="native",
+                    style_header=style_header_tabel(),
+                    style_cell=style_cell_tabel(),
+                    style_table={"overflowX": "auto", "maxHeight": "280px",
+                                 "overflowY": "auto"}),
+            ], {"marginTop": "12px"}),
+
             dcc.Interval(id=f"{p}-interval", interval=5000, n_intervals=0),
         ])
 
@@ -104,6 +130,7 @@ class SecțiuneStatistici:
             Output(f"{p}-kpi-pps",    "children"),
             Output(f"{p}-graf-ip",    "figure"),
             Output(f"{p}-graf-proto", "figure"),
+            Output(f"{p}-stats-ip",   "data"),
             Input(f"{p}-interval", "n_intervals"),
             Input(f"{p}-graf-interfata", "value"),
         )
@@ -188,4 +215,9 @@ class SecțiuneStatistici:
 
             fig_pr.update_layout(**PLOTLY_LAYOUT, yaxis_title="pachete / 10s")
 
-            return optiuni_iface, kpi_alerte, kpi_pps, fig_ip, fig_pr
+            rows_stats = []
+            if sursa is not None:
+                rows_stats = sursa.get_statistici_ip(
+                    limit=100, ip_exclus=self.ip_gazda)
+
+            return optiuni_iface, kpi_alerte, kpi_pps, fig_ip, fig_pr, rows_stats

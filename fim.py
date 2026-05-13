@@ -47,8 +47,15 @@ class MonitorIntegritateFisiere:
         if interval_secunde:
             self.INTERVAL_VERIFICARE = interval_secunde
 
-        # Combinam fisierele implicite cu cele configurate de utilizator
+        # Combinam fisierele implicite cu cele din DB (Setari) si CLI
         self.fisiere = list(self.FISIERE_IMPLICITE)
+        try:
+            for row in self.db.get_fim_cai_user():
+                c = row["cale"]
+                if c not in self.fisiere:
+                    self.fisiere.append(c)
+        except Exception as e:
+            print(f"[FIM] Nu pot incarca cai din DB: {e}")
         if fisiere_suplimentare:
             for cale in fisiere_suplimentare:
                 if cale not in self.fisiere:
@@ -118,6 +125,12 @@ class MonitorIntegritateFisiere:
             if os.path.exists(cale):
                 self._inregistreaza_in_baseline(cale)
                 print(f"[FIM] Fisier adaugat la monitorizare: {cale}")
+
+    def scoate_fisier(self, cale: str):
+        """Elimina o cale din lista de monitorizare (nu sterge randul din baseline)."""
+        if cale in self.fisiere:
+            self.fisiere.remove(cale)
+            print(f"[FIM] Scos din monitorizare: {cale}")
 
 
     def verifica_o_data(self):

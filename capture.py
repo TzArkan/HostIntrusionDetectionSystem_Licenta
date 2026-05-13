@@ -308,6 +308,7 @@ class AnalistPachete:
             return cb
 
         threads = []
+        # (în interiorul metodei start_captura_pachete din capture.py)
         for i, guid in enumerate(ifaces):
             # Gasim ManagerInterfata corespunzator (dupa nume interfata)
             mgr = None
@@ -324,6 +325,7 @@ class AnalistPachete:
                         store=False,
                         filter=bpf_filter,
                         timeout=1,
+                        promisc=False,
                     )
 
             t = threading.Thread(
@@ -334,6 +336,8 @@ class AnalistPachete:
             threads.append(t)
             print(f"[CAPTURE] Thread pornit: {guid}"
                   + (f" -> {mgr.interfata}" if mgr else " (fara manager interfata)"))
+                  
+            time.sleep(0.5) # Oprește execuția jumătate de secundă înainte să lanseze următorul sniffer
 
         # Blocam thread-ul principal pana termina toti
         self._threads = threads

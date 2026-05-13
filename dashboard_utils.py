@@ -3,7 +3,7 @@ dashboard_utils.py - Constante de tema, helper-e UI si detectare IP gazda.
 Importat de toate modulele dashboard_*.py.
 """
 import socket
-from dash import html
+from dash import html, dcc
 import plotly.graph_objects as go
 
 # ─── CULORI / TEMA ────────────────────────────────────────────────────────────
@@ -174,3 +174,52 @@ def btn_ml_gri(extra: dict = None) -> dict:
     if extra:
         s.update(extra)
     return s
+
+
+def grup_input_validat(
+    id_input: str,
+    tip: str = "text",          # "text" | "number"
+    placeholder: str = "",
+    stil_extra: dict = None,
+    regex: str = None,          # regex JS (string) pentru filtrare caractere
+    mesaj_eroare: str = "",
+    debounce: bool = True,
+    **kwargs_input,
+):
+    """
+    Returnează un html.Div cu:
+      - dcc.Input (cu data-regex și data-eroare pentru clientside)
+      - html.Div pentru mesajul de eroare (popup mic)
+    """
+    stil_input = inp(stil_extra or {})
+    return html.Div([
+        dcc.Input(
+            id=id_input,
+            type=tip,
+            placeholder=placeholder,
+            debounce=debounce,
+            style=stil_input,
+            **({'data-regex': regex} if regex else {}),
+            **kwargs_input,
+        ),
+        html.Div(
+            id=f"{id_input}-eroare",
+            style={
+                "position":        "absolute",
+                "top":             "calc(100% + 2px)",
+                "left":            "0",
+                "backgroundColor": "#1e1a10",
+                "color":           "#fbbf24",
+                "border":          "1px solid #92400e",
+                "borderRadius":    "5px",
+                "padding":         "4px 10px",
+                "fontSize":        "11px",
+                "zIndex":          "999",
+                "whiteSpace":      "nowrap",
+                "display":         "none",   # ascuns implicit
+                "boxShadow":       "0 4px 12px rgba(0,0,0,0.5)",
+                "pointerEvents":   "none",
+            },
+            children=mesaj_eroare,
+        ),
+    ], style={"position": "relative", "display": "inline-block"})

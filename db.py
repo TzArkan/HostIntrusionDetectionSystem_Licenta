@@ -47,7 +47,10 @@ CONFIG_DETECTORI_DEFAULT = [
 class ManagerBazaDate:
     def __init__(self, nume_baza_date="trafic_retea.db", read_only=False):
         director_principal  = os.path.dirname(os.path.abspath(__file__))
-        self.cale_baza_date = os.path.join(director_principal, nume_baza_date)
+        if os.path.isabs(nume_baza_date):
+            self.cale_baza_date = nume_baza_date
+        else:
+            self.cale_baza_date = os.path.join(director_principal, nume_baza_date)
         self.read_only      = read_only
         self._local         = threading.local()
 
@@ -152,6 +155,14 @@ class ManagerBazaDate:
         """)
 
         cur.execute("""
+            CREATE TABLE IF NOT EXISTS fim_cai_user (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                cale     TEXT NOT NULL UNIQUE,
+                creat_ts REAL NOT NULL
+            )
+        """)
+
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS config_detectori (
                 detector TEXT NOT NULL,
                 param    TEXT NOT NULL,
@@ -249,11 +260,22 @@ class ManagerBazaDate:
         cur.close()
         return rows
 
+    def get_max_packet_timestamp(self):
+        """Ultimul timestamp din captura (analiza offline)."""
+        cur = self._get_conexiune().cursor()
+        cur.execute("SELECT MAX(timestamp) AS m FROM packets")
+        row = cur.fetchone()
+        cur.close()
+        if not row or row["m"] is None:
+            return None
+        return float(row["m"])
+
     def get_pachete_filtrate(self, src_ip=None, dst_ip=None,
                              src_port=None, dst_port=None,
                              protocol=None, tcp_flags=None,
                              min_len=None, max_len=None,
-                             ip_exclus=None, limit=500, min_id=None):
+                             ip_exclus=None, limit=500, min_id=None,
+                             ts_min=None, ts_max=None):
         """Interogare pachete cu filtre multiple optionale."""
         cond   = []
         params = []
@@ -273,18 +295,23 @@ class ManagerBazaDate:
             cond.append("packet_len >= ?"); params.append(int(min_len))
         if max_len is not None:
             cond.append("packet_len <= ?"); params.append(int(max_len))
+        if ts_min is not None:
+            cond.append("timestamp >= ?"); params.append(float(ts_min))
+        if ts_max is not None:
+            cond.append("timestamp <= ?"); params.append(float(ts_max))
         if ip_exclus:
             cond.append("src_ip != ?"); params.append(ip_exclus)
             cond.append("dst_ip != ?"); params.append(ip_exclus)
         if min_id is not None:
             cond.append("id > ?"); params.append(int(min_id))
         where = ("WHERE " + " AND ".join(cond)) if cond else ""
+        order = "ORDER BY id ASC" if min_id is not None else "ORDER BY timestamp DESC"
         params.append(limit)
         cur = self._get_conexiune().cursor()
         cur.execute(f"""
             SELECT id,timestamp,src_ip,dst_ip,src_port,dst_port,
                    protocol,packet_len,tcp_flags
-            FROM packets {where} ORDER BY timestamp DESC LIMIT ?
+            FROM packets {where} {order} LIMIT ?
         """, params)
         rows = [dict(r) for r in cur.fetchall()]
         cur.close()
@@ -314,17 +341,48 @@ class ManagerBazaDate:
         cur.close()
         return rows
 
+    def get_ip_uri_corespondente(self, ip_gazda, limit=200):
+        """Returnează IP-urile care au comunicat direct cu ip_gazda."""
+        con = self._get_conexiune()
+        cur = con.cursor()
+        # Selectăm IP-urile care apar ca destinație când gazda e sursă 
+        # ȘI IP-urile care apar ca sursă când gazda e destinație
+        cur.execute(f"""
+            SELECT DISTINCT ip FROM (
+                SELECT dst_ip AS ip FROM packets WHERE src_ip = ?
+                UNION
+                SELECT src_ip AS ip FROM packets WHERE dst_ip = ?
+            ) WHERE ip IS NOT NULL AND ip != ?
+            LIMIT ?
+        """, (ip_gazda, ip_gazda, ip_gazda, limit))
+        
+        # Adaptăm în funcție de cum returnează cursurul tău (listă de tupluri sau dict-uri)
+        rows = cur.fetchall()
+        res = [r[0] if isinstance(r, tuple) else r['ip'] for r in rows]
+        cur.close()
+        return res
+
     def get_pachete_intre_ip(self, ip1, ip2, interval_secunde=None,
-                             src_port=None, dst_port=None, limit=500):
+                             src_port=None, dst_port=None, limit=500,
+                             protocol=None, tcp_flags=None,
+                             ts_min=None, ts_max=None):
         cond   = ["((src_ip=? AND dst_ip=?) OR (src_ip=? AND dst_ip=?))"]
         params = [ip1, ip2, ip2, ip1]
         if interval_secunde:
             cond.append("timestamp >= ?")
             params.append(time.time() - interval_secunde)
+        if ts_min is not None:
+            cond.append("timestamp >= ?"); params.append(float(ts_min))
+        if ts_max is not None:
+            cond.append("timestamp <= ?"); params.append(float(ts_max))
         if src_port and src_port.strip():
             cond.append("src_port = ?"); params.append(src_port.strip())
         if dst_port and dst_port.strip():
             cond.append("dst_port = ?"); params.append(dst_port.strip())
+        if protocol and protocol != "all":
+            cond.append("protocol = ?"); params.append(protocol)
+        if tcp_flags and tcp_flags != "all":
+            cond.append("tcp_flags LIKE ?"); params.append(f"%{tcp_flags}%")
         params.append(limit)
         cur = self._get_conexiune().cursor()
         cur.execute(f"""
@@ -337,8 +395,11 @@ class ManagerBazaDate:
         return rows
 
     def get_statistici_ip(self, limit=100, ip_exclus=None):
-        ec1 = f"AND src_ip != '{ip_exclus}'" if ip_exclus else ""
-        ec2 = f"AND dst_ip != '{ip_exclus}'" if ip_exclus else ""
+        filtru_src = "AND src_ip != ?" if ip_exclus else ""
+        filtru_dst = "AND dst_ip != ?" if ip_exclus else ""
+        params = ([ip_exclus] if ip_exclus else []) + \
+                ([ip_exclus] if ip_exclus else []) + \
+                [limit]
         cur = self._get_conexiune().cursor()
         cur.execute(f"""
             SELECT ip,
@@ -352,14 +413,14 @@ class ManagerBazaDate:
             FROM (
                 SELECT src_ip AS ip, COUNT(*) AS pkt_out, 0 AS pkt_in,
                        SUM(packet_len) AS bytes_out, 0 AS bytes_in
-                FROM packets WHERE src_ip IS NOT NULL {ec1} GROUP BY src_ip
+                FROM packets WHERE src_ip IS NOT NULL {filtru_src} GROUP BY src_ip
                 UNION ALL
                 SELECT dst_ip AS ip, 0 AS pkt_out, COUNT(*) AS pkt_in,
                        0 AS bytes_out, SUM(packet_len) AS bytes_in
-                FROM packets WHERE dst_ip IS NOT NULL {ec2} GROUP BY dst_ip
+                FROM packets WHERE dst_ip IS NOT NULL {filtru_dst} GROUP BY dst_ip
             )
             GROUP BY ip ORDER BY pachete_total DESC LIMIT ?
-        """, (limit,))
+        """, params)
         rows = [dict(r) for r in cur.fetchall()]
         cur.close()
         return rows
@@ -426,17 +487,18 @@ class ManagerBazaDate:
                                         bucket_secunde=10,
                                         ip_exclus=None):
         ts = time.time() - interval_secunde
-        ec = f"AND src_ip != '{ip_exclus}'" if ip_exclus else ""
+        ec = "AND src_ip != ?" if ip_exclus else ""
+        params_ec = [ip_exclus] if ip_exclus else []
         cur = self._get_conexiune().cursor()
         cur.execute(f"""
             SELECT CAST((timestamp-{ts})/{bucket_secunde} AS INTEGER)
-                   *{bucket_secunde}+{ts} AS ts_bucket,
-                   src_ip, COUNT(*) AS cnt
+                *{bucket_secunde}+{ts} AS ts_bucket,
+                src_ip, COUNT(*) AS cnt
             FROM packets
             WHERE timestamp>={ts} AND src_ip IS NOT NULL {ec}
             GROUP BY ts_bucket, src_ip
             ORDER BY ts_bucket, cnt DESC
-        """)
+        """, params_ec)
         rows = [dict(r) for r in cur.fetchall()]
         cur.close()
         return rows
@@ -775,6 +837,46 @@ class ManagerBazaDate:
         cur.execute(
             "UPDATE fim_baseline SET ultima_verificare=? WHERE cale_fisier=?",
             (time.time(), cale_fisier))
+        con.commit()
+        cur.close()
+
+    def get_fim_cai_user(self):
+        """Cai adaugate din Setari (monitorizare FIM extinsa)."""
+        cur = self._get_conexiune().cursor()
+        cur.execute(
+            "SELECT id, cale, creat_ts FROM fim_cai_user ORDER BY id ASC")
+        rows = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        return rows
+
+    def inserare_fim_cale_user(self, cale: str) -> bool:
+        """Returneaza True daca inserarea a reusit (cale noua)."""
+        if self.read_only:
+            return False
+        cale = (cale or "").strip()
+        if not cale:
+            return False
+        con = self._get_conexiune()
+        cur = con.cursor()
+        try:
+            cur.execute("""
+                INSERT INTO fim_cai_user (cale, creat_ts)
+                VALUES (?, ?)
+            """, (cale, time.time()))
+            con.commit()
+            ok = cur.rowcount > 0
+        except sqlite3.IntegrityError:
+            ok = False
+        finally:
+            cur.close()
+        return ok
+
+    def sterge_fim_cale_user(self, row_id: int):
+        if self.read_only:
+            return
+        con = self._get_conexiune()
+        cur = con.cursor()
+        cur.execute("DELETE FROM fim_cai_user WHERE id=?", (int(row_id),))
         con.commit()
         cur.close()
 

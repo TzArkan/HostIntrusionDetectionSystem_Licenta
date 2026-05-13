@@ -1,6 +1,6 @@
 """dashboard_trafic.py - Sectiunea Trafic Live cu filtre avansate."""
 
-from datetime import datetime
+from datetime import datetime, date
 
 import dash
 from dash import dcc, html, dash_table, Patch
@@ -17,7 +17,37 @@ from validators import validate_ip, validate_port
 _FILTRE = {
     "iface-sel", "f-src-ip", "f-dst-ip", "f-src-port",
     "f-dst-port", "f-min-len", "f-max-len", "f-proto", "f-flags",
+    "f-ts-start", "f-ts-end",
 }
+
+
+def _parse_ts_input(val) -> float | None:
+    """Parseaza timp pentru filtru istoric; suporta data completa sau doar ora (azi)."""
+    if val is None or not str(val).strip():
+        return None
+    s = str(val).strip()
+    fmts = (
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%d.%m.%Y %H:%M:%S",
+        "%d.%m.%Y %H:%M",
+    )
+    for fmt in fmts:
+        try:
+            return datetime.strptime(s, fmt).timestamp()
+        except ValueError:
+            pass
+    try:
+        tt = datetime.strptime(s, "%H:%M:%S").time()
+        return datetime.combine(date.today(), tt).timestamp()
+    except ValueError:
+        pass
+    try:
+        tt = datetime.strptime(s, "%H:%M").time()
+        return datetime.combine(date.today(), tt).timestamp()
+    except ValueError:
+        pass
+    return None
 
 
 def _format_pachet(pk: dict) -> dict:
@@ -96,6 +126,16 @@ class SecțiuneTrafic:
                 ], style={"display": "flex", "gap": "10px",
                           "flexWrap": "wrap", "marginBottom": "10px"}),
                 html.Div([
+                    html.Div([html.Label("Start timp:", style=lbl()),
+                              dcc.Input(id=f"{p}-f-ts-start", type="text",
+                                        placeholder="2026-05-12 14:00:00",
+                                        debounce=True,
+                                        style=inp({"width": "168px"}))]),
+                    html.Div([html.Label("End timp:", style=lbl()),
+                              dcc.Input(id=f"{p}-f-ts-end", type="text",
+                                        placeholder="2026-05-12 14:05:00",
+                                        debounce=True,
+                                        style=inp({"width": "168px"}))]),
                     html.Div([html.Label("Protocol:", style=lbl()),
                               dcc.Dropdown(id=f"{p}-f-proto",
                                            options=self.PROTO_OPTS,
@@ -118,16 +158,52 @@ class SecțiuneTrafic:
                                        "color": "#93c5fd",
                                        "border": "none", "borderRadius": "6px",
                                        "padding": "6px 12px", "cursor": "pointer"}),
-                ], style={"display": "flex", "gap": "10px", "alignItems": "flex-end"}),
+                ], style={"display": "flex", "gap": "10px", "alignItems": "flex-end",
+                          "flexWrap": "wrap"}),
+                html.Div(
+                    "Format timp: YYYY-MM-DD HH:MM:SS sau HH:MM:SS (azi). "
+                    "Cu Start+End valid, traficul live se ingheata pe acel interval.",
+                    style={"fontSize": "11px", "color": "#94a3b8", "marginTop": "8px"},
+                ),
                 html.Div(
                     "Format: IP ex. 192.168.1.10 | Port 1-65535",
-                    style={"fontSize": "11px", "color": "#94a3b8", "marginTop": "8px"},
+                    style={"fontSize": "11px", "color": "#94a3b8", "marginTop": "4px"},
                 ),
             ], {"padding": "14px", "marginBottom": "12px"}),
 
             # ── Tabel pachete ─────────────────────────────────────────────────
             card([
                 sectiune_titlu("Pachete recente"),
+                html.Div([
+                    html.Button(
+                        "⏸ Pauză live",
+                        id=f"{p}-pause-btn",
+                        n_clicks=0,
+                        style={
+                            "background": "#334155",
+                            "color": "#e2e8f0",
+                            "border": f"1px solid {BORDER}",
+                            "borderRadius": "6px",
+                            "padding": "6px 14px",
+                            "cursor": "pointer",
+                            "fontSize": "12px",
+                            "fontWeight": "600",
+                        },
+                    ),
+                    html.Span(
+                        id=f"{p}-freeze-hint",
+                        style={
+                            "fontSize": "11px",
+                            "color": "#94a3b8",
+                            "marginLeft": "12px",
+                        },
+                    ),
+                ], style={
+                    "display": "flex",
+                    "alignItems": "center",
+                    "marginBottom": "10px",
+                    "flexWrap": "wrap",
+                }),
                 dash_table.DataTable(
                     id=f"{p}-table",
                     columns=[{"name": n, "id": i} for n, i in [
@@ -141,39 +217,34 @@ class SecțiuneTrafic:
                     style_data_conditional=STYLE_DATA_COND_PROTO,
                     style_table={"overflowX": "auto", "maxHeight": "320px",
                                  "overflowY": "auto"}),
-            ], {"marginBottom": "12px"}),
-
-            # ── Tabel statistici IP ───────────────────────────────────────────
-            card([
-                sectiune_titlu(
-                    f"Statistici per IP  (IP gazda exclus: {self.ip_gazda})"),
-                dash_table.DataTable(
-                    id=f"{p}-stats",
-                    columns=[{"name": n, "id": i} for n, i in [
-                        ("IP", "ip"),
-                        ("Pkt. Trimise", "pachete_trimise"),
-                        ("Pkt. Primite", "pachete_primite"),
-                        ("Total Pkt.", "pachete_total"),
-                        ("MB Trimisi", "mb_trimisi"),
-                        ("MB Primiti", "mb_primiti"),
-                        ("Medie B/pkt", "medie_bytes_pachet")]],
-                    data=[], page_size=20, sort_action="native",
-                    style_header=style_header_tabel(),
-                    style_cell=style_cell_tabel(),
-                    style_table={"overflowX": "auto", "maxHeight": "260px",
-                                 "overflowY": "auto"}),
-            ]),
+                ], {"marginBottom": "12px"}),
 
             dcc.Interval(id=f"{p}-interval", interval=2000, n_intervals=0),
             dcc.Store(id=f"{p}-iface-sel",
                       data=None),   # numele interfetei selectate
             dcc.Store(id=f"{p}-last-id", data=None),
+            dcc.Store(id=f"{p}-manual-pause", data=False),
+            dcc.Store(id=f"{p}-applied-filters", data={}),
         ])
 
     def register_callbacks(self, app):
         p = self.P
 
         from dashboard_utils import ACCENT, MUTED, CARD, BORDER, TEXT
+
+        @app.callback(
+            Output(f"{p}-manual-pause", "data"),
+            Output(f"{p}-pause-btn", "children"),
+            Input(f"{p}-pause-btn", "n_clicks"),
+            State(f"{p}-manual-pause", "data"),
+            prevent_initial_call=True,
+        )
+        def toggle_manual_pause(n, cur):
+            if not n:
+                raise PreventUpdate
+            new = not bool(cur)
+            label = "▶ Continuă live" if new else "⏸ Pauză live"
+            return new, label
 
         @app.callback(
             Output(f"{p}-iface-bar",  "children"),
@@ -234,39 +305,93 @@ class SecțiuneTrafic:
             return bar, selectata
 
         @app.callback(
+            Output(f"{p}-applied-filters", "data"),
+            Input(f"{p}-search-btn", "n_clicks"),
+            State(f"{p}-f-src-ip",   "value"),
+            State(f"{p}-f-dst-ip",   "value"),
+            State(f"{p}-f-src-port", "value"),
+            State(f"{p}-f-dst-port", "value"),
+            State(f"{p}-f-min-len",  "value"),
+            State(f"{p}-f-max-len",  "value"),
+            State(f"{p}-f-proto",    "value"),
+            State(f"{p}-f-flags",    "value"),
+            State(f"{p}-f-ts-start", "value"),
+            State(f"{p}-f-ts-end",   "value"),
+        )
+        def aplica_filtre(clicks, src_ip, dst_ip, src_port, dst_port, 
+                          min_len, max_len, proto, flags, ts_start, ts_end):
+            
+            # Validări de securitate în backend: dacă datele sunt proaste, oprim execuția
+            for val in [src_ip, dst_ip]:
+                ok, _ = validate_ip(val, allow_empty=True)
+                if not ok: raise PreventUpdate
+            for val in [src_port, dst_port]:
+                ok, _ = validate_port(val, allow_empty=True)
+                if not ok: raise PreventUpdate
+                
+            ts_min = _parse_ts_input(ts_start)
+            ts_max = _parse_ts_input(ts_end)
+            has_any_ts = bool((ts_start and str(ts_start).strip()) or (ts_end and str(ts_end).strip()))
+            
+            if has_any_ts and (ts_min is None or ts_max is None):
+                raise PreventUpdate
+            if ts_min is not None and ts_max is not None and ts_min > ts_max:
+                raise PreventUpdate
+
+            # Salvăm în memorie doar filtrele valide
+            return {
+                "src_ip": src_ip, "dst_ip": dst_ip,
+                "src_port": src_port, "dst_port": dst_port,
+                "min_len": min_len, "max_len": max_len,
+                "proto": proto, "flags": flags,
+                "ts_start": ts_start, "ts_end": ts_end
+            }
+
+        # CALLBACK 2: Tabelul live care citește strict din sertar
+        @app.callback(
             Output(f"{p}-table", "data"),
             Output(f"{p}-count", "children"),
-            Output(f"{p}-stats", "data"),
             Output(f"{p}-last-id", "data"),
             Output(f"{p}-val-msg", "children"),
+            Output(f"{p}-freeze-hint", "children"),
+            
+            # Declanșatori
             Input(f"{p}-interval",   "n_intervals"),
             Input(f"{p}-iface-sel",  "data"),
-            Input(f"{p}-f-src-ip",   "value"),
-            Input(f"{p}-f-dst-ip",   "value"),
-            Input(f"{p}-f-src-port", "value"),
-            Input(f"{p}-f-dst-port", "value"),
-            Input(f"{p}-f-min-len",  "value"),
-            Input(f"{p}-f-max-len",  "value"),
-            Input(f"{p}-f-proto",    "value"),
-            Input(f"{p}-f-flags",    "value"),
-            Input(f"{p}-search-btn", "n_clicks"),
-            State(f"{p}-last-id", "data"),
+            Input(f"{p}-manual-pause", "data"),
+            Input(f"{p}-applied-filters", "data"),  # Citim direct din sertar
+            State(f"{p}-last-id",    "data"),
         )
-        def actualizeaza(_, iface_sel, src_ip, dst_ip, src_port, dst_port,
-                         min_len, max_len, proto, flags, _search_clicks, last_id):
-            for val in [src_ip, dst_ip]:
-                ok, err = validate_ip(val, allow_empty=True)
-                if not ok:
-                    return [], "0 pachete", [], None, err
-            for val in [src_port, dst_port]:
-                ok, err = validate_port(val, allow_empty=True)
-                if not ok:
-                    return [], "0 pachete", [], None, err
+        def actualizeaza(_, iface_sel, manual_pause, filtre, last_id):
+            
+            # Extragem valorile din sertar (dacă e gol, setăm None)
+            filtre = filtre or {}
+            src_ip   = filtre.get("src_ip")
+            dst_ip   = filtre.get("dst_ip")
+            src_port = filtre.get("src_port")
+            dst_port = filtre.get("dst_port")
+            min_len  = filtre.get("min_len")
+            max_len  = filtre.get("max_len")
+            proto    = filtre.get("proto")
+            flags    = filtre.get("flags")
+            ts_start = filtre.get("ts_start")
+            ts_end   = filtre.get("ts_end")
+
+            ts_min = _parse_ts_input(ts_start)
+            ts_max = _parse_ts_input(ts_end)
+
+            time_window = ts_min is not None and ts_max is not None
+            freeze = bool(manual_pause) or time_window
 
             ctx = dash.callback_context
             trig = ctx.triggered[0]["prop_id"] if ctx.triggered else ""
-            este_filtru = any(f in trig for f in _FILTRE)
-            # Alege sursa de date: per-interfata sau DB principal
+            
+            if f"{p}-interval" in trig and freeze:
+                raise PreventUpdate
+
+            # Orice schimbare în sertar se consideră filtru nou
+            este_filtru = "applied-filters" in trig or "manual-pause" in trig
+
             mgr = self.state.get_manager_interfata(iface_sel)
 
             def _fetch(min_id_val=None):
@@ -275,31 +400,39 @@ class SecțiuneTrafic:
                     src_port=src_port, dst_port=dst_port,
                     protocol=proto, tcp_flags=flags,
                     min_len=min_len, max_len=max_len,
-                    limit=500, min_id=min_id_val
+                    limit=500, min_id=min_id_val,
+                    ts_min=ts_min if time_window else None,
+                    ts_max=ts_max if time_window else None,
                 )
                 if mgr:
                     return mgr.get_pachete_filtrate(**kw)
                 return self.state.db.get_pachete_filtrate(**kw)
 
-            def _stats():
-                if mgr:
-                    return mgr.get_statistici_ip(limit=100, ip_exclus=self.ip_gazda)
-                return self.state.db.get_statistici_ip(limit=100, ip_exclus=self.ip_gazda)
+            hint = ""
+            if time_window:
+                hint = "Interval istoric — fluxul live este oprit până ștergi Start / End."
+            elif manual_pause:
+                hint = "Pauză manuală — apasă „Continuă live” pentru a relua actualizarea."
 
-            if este_filtru or last_id is None:
+            if este_filtru or last_id is None or time_window or ("manual-pause" in trig):
                 pachete = _fetch()
-                rows = [_format_pachet(pk) for pk in pachete]
-                new_id = rows[0]["id"] if rows else None
-                return rows, f"{len(rows)} pachete afisate", _stats(), new_id, ""
+                rows = [_format_pachet(pk) for pk in reversed(pachete)]
+                new_id = rows[-1]["id"] if rows else None
+                if time_window:
+                    cnt = f"{len(rows)} pachete (interval)"
+                elif manual_pause and "manual-pause" in trig:
+                    cnt = f"{len(rows)} pachete (inghetat)"
+                else:
+                    cnt = f"{len(rows)} pachete afisate"
+                return (rows, cnt, new_id, "", hint)
 
             pachete_noi = _fetch(min_id_val=last_id)
-            stats = _stats()
             if not pachete_noi:
                 raise PreventUpdate
 
             new_rows = [_format_pachet(pk) for pk in pachete_noi]
-            new_id = new_rows[0]["id"]
+            new_id = new_rows[-1]["id"]
             patched = Patch()
             for row in reversed(new_rows):
                 patched.prepend(row)
-            return patched, f"+{len(new_rows)} pachete noi", stats, new_id, ""
+            return (patched, f"+{len(new_rows)} pachete noi", new_id, "", hint)

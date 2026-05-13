@@ -44,3 +44,15 @@ body {
 *::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* Input invalid (după blur) */
+input.hids-invalid {
+  border-color: #92400e !important;
+  box-shadow: 0 0 0 2px rgba(146, 64, 14, 0.25);
+}
+
+/* Wrapper relativ pentru popup */
+.hids-input-grup {
+  position: relative;
+  display: inline-block;
+}

@@ -5,8 +5,10 @@ dashboard_setari.py - Sectiunea Setari:
        - Sub-card Antrenare: butoane cu stare dinamica (porneste/opreste/sterge)
        - Sub-card Detectie: toggle activare/dezactivare anomalii ML
   3. Reguli custom (adaugare, editare, stergere)
+  4. FIM: cai suplimentare persistente in SQLite (langa regulile custom)
 """
 import json
+import os
 
 import dash
 from dash import dcc, html
@@ -333,10 +335,47 @@ class SecțiuneSetari:
 
             html.Div(id=f"{p}-r-lista"),
 
+            html.Div(style={"height": "14px"}),
+
+            # ══ D) FIM — căi monitorizate (persistente) ═══════════════════════
+            html.H3("Monitorizare integritate fișiere (FIM)",
+                    style={"color": TEXT, "fontSize": "15px",
+                           "marginBottom": "10px", "marginTop": "4px"}),
+            card([
+                sectiune_titlu("Căi suplimentare"),
+                html.P(
+                    "Pe lângă fișierele implicite (ex. hosts), poți adăuga căi "
+                    "complete către fișiere monitorizate. Modificările față de "
+                    "baseline generează alerte FIM. Listă salvată în baza SQLite.",
+                    style={"color": MUTED, "fontSize": "12px",
+                           "margin": "0 0 12px 0", "lineHeight": "1.6"}),
+                html.Div([
+                    dcc.Input(
+                        id=f"{p}-fim-cale",
+                        type="text",
+                        placeholder=r"ex: C:\Windows\System32\drivers\etc\hosts",
+                        style=inp({"flex": "1", "minWidth": "260px",
+                                   "fontSize": "12px"})),
+                    html.Button(
+                        "+ Adaugă la monitorizare",
+                        id=f"{p}-fim-add",
+                        n_clicks=0,
+                        style=btn("#166534", "white")),
+                ], style={
+                    "display": "flex", "gap": "10px", "flexWrap": "wrap",
+                    "alignItems": "center", "marginBottom": "8px",
+                }),
+                html.Div(id=f"{p}-fim-msg",
+                         style={"fontSize": "12px", "color": "#86efac",
+                                "marginBottom": "8px"}),
+                html.Div(id=f"{p}-fim-lista"),
+            ]),
+
             # Stores & Intervals
             dcc.Store(id=f"{p}-edit-id",      data=None),
             dcc.Store(id=f"{p}-save-store",   data=0),
             dcc.Store(id=f"{p}-ml-act-store", data=0),
+            dcc.Store(id=f"{p}-fim-store",    data=0),
             dcc.Interval(id=f"{p}-interval",  interval=6000, n_intervals=0),
             dcc.Interval(id=f"{p}-ml-interval", interval=2000, n_intervals=0),
         ])
@@ -986,4 +1025,98 @@ class SecțiuneSetari:
                               "border": f"1px solid {BORDER}"})
 
                 elemente.append(rand)
+            return elemente
+
+        # ── D) FIM — căi persistente ───────────────────────────────────────────
+
+        @app.callback(
+            Output(f"{p}-fim-msg", "children"),
+            Output(f"{p}-fim-store", "data"),
+            Input(f"{p}-fim-add", "n_clicks"),
+            State(f"{p}-fim-cale", "value"),
+            State(f"{p}-fim-store", "data"),
+            prevent_initial_call=True,
+        )
+        def fim_adauga(_, cale, ctr):
+            if not cale or not str(cale).strip():
+                return "Introduceți o cale completă către fișier.", ctr or 0
+            cale_n = os.path.normpath(str(cale).strip())
+            ok = self.state.db_live.inserare_fim_cale_user(cale_n)
+            if not ok:
+                return ("Cale deja în listă sau nu s-a putut salva "
+                        "(bază read-only)."), ctr or 0
+            fm = getattr(self.state, "fim_monitor", None)
+            if fm:
+                fm.adauga_fisier(cale_n)
+            return f"✓ Adăugat la monitorizare: {cale_n}", (ctr or 0) + 1
+
+        @app.callback(
+            Output(f"{p}-fim-store", "data", allow_duplicate=True),
+            Input({"type": f"{p}-fim-del",
+                   "index": dash.dependencies.ALL}, "n_clicks"),
+            State(f"{p}-fim-store", "data"),
+            prevent_initial_call=True,
+        )
+        def fim_sterge(clicks, ctr):
+            ctx = dash.callback_context
+            if not ctx.triggered or not any(c for c in clicks if c):
+                raise PreventUpdate
+            try:
+                info = json.loads(ctx.triggered[0]["prop_id"].split(".")[0])
+                rid = int(info["index"])
+            except Exception:
+                raise PreventUpdate
+            cale_rm = None
+            for r in self.state.db_live.get_fim_cai_user():
+                if r["id"] == rid:
+                    cale_rm = r["cale"]
+                    break
+            if cale_rm:
+                self.state.db_live.sterge_fim_cale_user(rid)
+                fm = getattr(self.state, "fim_monitor", None)
+                if fm:
+                    fm.scoate_fisier(cale_rm)
+            return (ctr or 0) + 1
+
+        @app.callback(
+            Output(f"{p}-fim-lista", "children"),
+            Input(f"{p}-interval", "n_intervals"),
+            Input(f"{p}-fim-store", "data"),
+        )
+        def fim_refresh(_, __):
+            rows = self.state.db_live.get_fim_cai_user()
+            if not rows:
+                return html.P(
+                    "Nicio cale suplimentară. Fișierele implicite "
+                    "(hosts, services, …) rămân activate din cod.",
+                    style={"color": MUTED, "padding": "8px 0",
+                           "fontSize": "12px"})
+
+            elemente = []
+            for r in rows:
+                elemente.append(html.Div([
+                    html.Span(r["cale"], style={
+                        "fontFamily": "ui-monospace, monospace",
+                        "fontSize": "12px",
+                        "color": TEXT,
+                        "flex": "1",
+                        "wordBreak": "break-all",
+                    }),
+                    html.Button(
+                        "Șterge",
+                        id={"type": f"{p}-fim-del", "index": r["id"]},
+                        n_clicks=0,
+                        style=btn("#4c1d1d", "#fca5a5",
+                                    {"fontSize": "11px",
+                                     "padding": "3px 10px"})),
+                ], style={
+                    "display": "flex",
+                    "justifyContent": "space-between",
+                    "alignItems": "center",
+                    "gap": "10px",
+                    "padding": "8px 10px",
+                    "marginBottom": "6px",
+                    "borderRadius": "6px",
+                    "border": f"1px solid {BORDER}",
+                }))
             return elemente

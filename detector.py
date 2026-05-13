@@ -23,9 +23,18 @@ class DetectorAtac:
         self.sursa    = sursa
         self.ip_gazda = ip_gazda   # exclus din toate query-urile de detectie
         self.enrichment = enrichment
+        # Pentru analiza offline: moment de referinta (ex. MAX(timestamp) din captura)
+        self._reference_time = None
         
         # DICTIONAR NOU PENTRU COOLDOWN ALERTE
         self._ultimele_alerte = {} 
+
+    def set_reference_time(self, ts):
+        """Fixeaza „acum” pentru ferestre SQL (scan pasiv pe capturi vechi)."""
+        self._reference_time = float(ts) if ts is not None else None
+
+    def _now(self):
+        return self._reference_time if self._reference_time is not None else time.time()
 
     def analizeaza(self, fereastra_secunde=60):
         raise NotImplementedError
@@ -43,7 +52,7 @@ class DetectorAtac:
         cheie_alerta = (
             f"{tip_emitere}|{src_ip}|{dst_ip}|{src_port}|{dst_port}|{protocol}"
         )
-        timp_curent = time.time()
+        timp_curent = self._now()
         cooldown = 180
 
         with self._LOCK_SUPRESIE:
@@ -83,7 +92,7 @@ class DetectorAtac:
               f"| src={src_ip} | {detalii}")
 
     def _ts(self, f):
-        return time.time() - f
+        return self._now() - f
 
     def _excl(self):
         """Returneaza conditia SQL si parametrii pentru excluderea IP-ului gazda."""
@@ -112,7 +121,7 @@ class DetectorAtac:
             return src_ip, dst_ip
         try:
             cond = ["timestamp >= ?"]
-            params = [time.time() - 180]
+            params = [self._now() - 180]
             if protocol:
                 cond.append("protocol = ?")
                 params.append(protocol)
@@ -433,12 +442,19 @@ class DetectorDinamic(DetectorAtac):
     """Aplica regulile din tabela reguli_detectie — adaugate din UI fara cod nou."""
     NUME = "Regula Custom"
 
+    def __init__(self, db, backup=None, sursa="live", ip_gazda=None,
+                 enrichment=None, reguli_db=None):
+        super().__init__(db, backup, sursa, ip_gazda, enrichment)
+        # Surse pentru reguli custom (ex. DB live) separate de DB pachete (ex. captura pasiva)
+        self.reguli_db = reguli_db if reguli_db is not None else db
+
     def analizeaza(self, fereastra_secunde=60):
-        for reg in self.db.get_reguli_active():
+        for reg in self.reguli_db.get_reguli_active():
             self._aplica_regula(reg)
 
     def _aplica_regula(self, reg):
-        cond = ["timestamp >= ?"]; p = [time.time() - reg["fereastra_secunde"]]
+        cond = ["timestamp >= ?"]
+        p = [self._now() - reg["fereastra_secunde"]]
         if reg.get("protocol") and reg["protocol"] != "all":
             cond.append("protocol = ?"); p.append(reg["protocol"])
         if reg.get("port_destinatie"):
@@ -475,7 +491,8 @@ class ManagerDetectie:
     """start() = periodic in thread daemon (live). ruleaza_o_data() = pasiv."""
     INTERVAL = 5
 
-    def __init__(self, db, backup=None, sursa="live", ip_gazda=None, enrichment=None):
+    def __init__(self, db, backup=None, sursa="live", ip_gazda=None,
+                 enrichment=None, reguli_db=None):
         self.db       = db
         self.backup   = backup or BackupNoop()
         self.sursa    = sursa
@@ -495,8 +512,14 @@ class ManagerDetectie:
             DetectorDNSAmplification(**args),
             DetectorExfiltrare(**args),
             DetectorICMPFlood(**args),
-            DetectorDinamic(**args),
+            DetectorDinamic(**args, reguli_db=reguli_db or db),
         ]
+
+    def set_reference_time(self, ts):
+        """Propaga momentul de referinta la toti detectorii (analiza offline)."""
+        for d in self.detectoare:
+            if hasattr(d, "set_reference_time"):
+                d.set_reference_time(ts)
 
     def adauga_detector(self, d):
         # Propagam ip_gazda si detectoarelor adaugate ulterior
@@ -506,7 +529,9 @@ class ManagerDetectie:
             d.enrichment = self.enrichment
         self.detectoare.append(d)
 
-    def ruleaza_o_data(self):
+    def ruleaza_o_data(self, reference_time=None):
+        if reference_time is not None:
+            self.set_reference_time(reference_time)
         print(f"[DETECTIE] Analiza ({len(self.detectoare)} detectori)...")
         for d in self.detectoare:
             try:

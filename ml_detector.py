@@ -149,23 +149,3 @@ class DetectorAnomalii(DetectorAtac):
                          f"Verifica si confirma ca TP sau FP din sectiunea Alerte."))
 
 
-class ColectorBaseline:
-    """Colecteaza trafic normal si antreneaza modelul dupa N ore."""
-
-    def __init__(self, detector_anomalii: DetectorAnomalii,
-                 ore_necesare: int = 2):
-        self.detector    = detector_anomalii
-        self.ore_necesare = ore_necesare
-        self._thread     = None
-
-    def start_colectare_si_antrenare(self):
-        self._thread = threading.Thread(
-            target=self._colecteaza_si_antreneaza, daemon=True)
-        self._thread.start()
-        print(f"[ML] Colectare baseline pornita. "
-              f"Antrenare dupa {self.ore_necesare}h.")
-
-    def _colecteaza_si_antreneaza(self):
-        print(f"[ML] Astept {self.ore_necesare}h pentru baseline...")
-        time.sleep(self.ore_necesare * 3600)
-        self.detector.antreneaza_baseline(ore=self.ore_necesare)

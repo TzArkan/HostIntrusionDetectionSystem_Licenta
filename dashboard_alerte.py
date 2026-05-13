@@ -16,6 +16,7 @@ from dashboard_utils import (
     inp, lbl, btn, card, badge_sev,
     style_header_tabel2, style_cell_tabel2,
     SEV_CULORI, ACCENT, MUTED, TEXT, BORDER, CARD, DARK, DARK2,
+    get_ip_gazda,
 )
 
 
@@ -28,8 +29,6 @@ SEV_BG = {
 }
 SEV_BORDER = SEV_CULORI
 
-# ─── Culori per tip atac (suprascriu culoarea de severitate) ─────────────────
-# Modifica aici pentru a personaliza culoarea oricarui tip de atac
 TIP_CULORI = {
     "DDoS SYN Flood":         "#a78bfa",   # violet
     "DoS SYN Flood":          "#c084fc",   # violet deschis
@@ -79,7 +78,50 @@ class SecțiuneAlerte:
 
     def layout(self):
         p = self.P
+        scan_pasiv = html.Div([
+            html.P(
+                "Rulează detectorii built-in și regulile custom din baza live "
+                "pe pachetele din captura încărcată (moment de referință = sfârșitul capturii).",
+                style={"fontSize": "12px", "color": MUTED,
+                       "margin": "0 0 12px 0", "lineHeight": "1.5"},
+            ),
+            dcc.Loading(
+                id="pa-scan-loading",
+                type="circle",
+                color="#38bdf8",
+                fullscreen=False,
+                style={"minHeight": "48px"},
+                children=html.Div([
+                    html.Button(
+                        "🔍 Scan reguli pe captură",
+                        id="p-scan-db-btn",
+                        n_clicks=0,
+                        style={
+                            "background": "#1e40af",
+                            "color": "#93c5fd",
+                            "border": "none",
+                            "borderRadius": "8px",
+                            "padding": "10px 20px",
+                            "cursor": "pointer",
+                            "fontSize": "13px",
+                            "fontWeight": "600",
+                        },
+                    ),
+                    html.Div(id="p-scan-msg",
+                             style={"fontSize": "12px", "color": MUTED,
+                                    "marginTop": "10px"}),
+                ]),
+            ),
+        ], style={
+            "marginBottom": "16px",
+            "padding": "14px 16px",
+            "borderRadius": "10px",
+            "border": f"1px solid {BORDER}",
+            "backgroundColor": "rgba(30,58,138,0.12)",
+        }) if p == "pa" else html.Div()
+
         return html.Div([
+            scan_pasiv,
             # ── Filtre ───────────────────────────────────────────────────────
             card([
                 html.Div([
@@ -267,26 +309,29 @@ class SecțiuneAlerte:
         @app.callback(
             Output(f"{p}-container", "children"),
             Output(f"{p}-count",     "children"),
+            # Declanșatori (Input)
             Input(f"{p}-interval",    "n_intervals"),
-            Input(f"{p}-open-id",     "data"),
+            Input(f"{p}-search-btn",  "n_clicks"),
             Input(f"{p}-tp-fp-store", "data"),
             Input(f"{p}-seen-store",  "data"),
-            Input(f"{p}-f-interval",  "value"),
-            Input(f"{p}-f-status",    "value"),
-            Input(f"{p}-f-sev",       "value"),
-            Input(f"{p}-f-tip",       "value"),
-            Input(f"{p}-f-ip",        "value"),
-            Input(f"{p}-f-country",   "value"),
-            Input(f"{p}-f-proc",      "value"),
-            Input(f"{p}-f-asn",       "value"),
-            Input(f"{p}-f-ext-only",  "value"),
-            Input(f"{p}-f-portscan",  "value"),
-            Input(f"{p}-search-btn",  "n_clicks"),
+            Input("pa-scan-tick",     "data"),
+            # Citire pasivă (State)
+            State(f"{p}-open-id",     "data"),
+            State(f"{p}-f-interval",  "value"),
+            State(f"{p}-f-status",    "value"),
+            State(f"{p}-f-sev",       "value"),
+            State(f"{p}-f-tip",       "value"),
+            State(f"{p}-f-ip",        "value"),
+            State(f"{p}-f-country",   "value"),
+            State(f"{p}-f-proc",      "value"),
+            State(f"{p}-f-asn",       "value"),
+            State(f"{p}-f-ext-only",  "value"),
+            State(f"{p}-f-portscan",  "value"),
         )
-        def randeaza(_, open_id, _tpfp, _seen,
-                     interval_val, status_val, sev_val, tip_val, ip_val,
-                     country_val, proc_val, asn_val, ext_only_val,
-                     portscan_val, _search_clicks):
+        def randeaza(_, _search, _tpfp, _seen, _scan, 
+                     open_id, interval_val, status_val, sev_val, tip_val, ip_val,
+                     country_val, proc_val, asn_val, ext_only_val, portscan_val):
+            
             ts_start = None
             if interval_val and interval_val != "all":
                 try:
@@ -491,6 +536,18 @@ class SecțiuneAlerte:
                            "padding": "40px"})]
 
             return carduri, f"{len(alerte)} alerte"
+
+        if p == "pa":
+            @app.callback(
+                Output("p-scan-msg", "children"),
+                Output("pa-scan-tick", "data"),
+                Input("p-scan-db-btn", "n_clicks"),
+                State("pa-scan-tick", "data"),
+                prevent_initial_call=True,
+            )
+            def scan_pasiv_db(_, tick):
+                _ok, msg = self.state.scan_reguli_pe_captura_pasiva(get_ip_gazda())
+                return msg, (tick or 0) + 1
 
     def _detalii(self, a: dict, portscan_filter: str = None) -> list:
         tip     = (a["tip_atac"] or "").upper()

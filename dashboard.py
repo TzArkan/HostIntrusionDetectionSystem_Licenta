@@ -227,11 +227,21 @@ class DashboardRetea:
                                "zIndex": "200", "display": "none"}),
             self._sidebar(),
 
-            # Zona continut
+            # Zona continut — Live și Pasiv montate separat (Pasiv nu se pierde la comutare)
             html.Div([
                 html.Div(
-                    id="tab-content",
+                    id="live-tab-content",
                     style={
+                        "padding": "26px 32px 40px 32px",
+                        "minHeight": "100vh",
+                        "maxWidth": "1580px",
+                        "margin": "0 auto",
+                    }),
+                html.Div(
+                    id="pasiv-tab-content",
+                    children=self._pasiv.layout(),
+                    style={
+                        "display": "none",
                         "padding": "26px 32px 40px 32px",
                         "minHeight": "100vh",
                         "maxWidth": "1580px",
@@ -247,8 +257,10 @@ class DashboardRetea:
 
             dcc.Store(id="nav-sectiune",  data="trafic"),
             dcc.Store(id="nav-mod",       data="live"),
+            dcc.Store(id="nav-mod-sync",  data="live"),
             dcc.Store(id="alerte-last-ts", data=0),
             dcc.Store(id="sidebar-open", data=True),
+            dcc.Store(id="pa-scan-tick", data=0),
             dcc.Interval(id="g-interval", interval=2500, n_intervals=0),
 
         ], style={
@@ -376,23 +388,50 @@ class DashboardRetea:
                     "fontSize": "12px", "fontStyle": "italic"})]
             return items, mode_btns
 
-        # Render continut
+        # Continut Live (Pasiv ramane in pasiv-tab-content)
         @self.app.callback(
-            Output("tab-content", "children"),
+            Output("live-tab-content", "children"),
             Input("nav-sectiune", "data"),
             Input("nav-mod",      "data"),
         )
-        def render_content(sectiune, mod):
+        def render_live(sectiune, mod):
+            if mod != "live":
+                raise PreventUpdate
+            mapping = {
+                "trafic":      self._trafic.layout,
+                "statistici":  self._statistici.layout,
+                "alerte":      self._alerte.layout,
+                "comunicatii": self._comun.layout,
+                "setari":      self._setari.layout,
+            }
+            return mapping.get(sectiune, lambda: [])()
+
+        @self.app.callback(
+            Output("live-tab-content", "style"),
+            Output("pasiv-tab-content", "style"),
+            Input("nav-mod", "data"),
+        )
+        def toggle_live_pasiv(mod):
+            pad = {
+                "padding": "26px 32px 40px 32px",
+                "minHeight": "100vh",
+                "maxWidth": "1580px",
+                "margin": "0 auto",
+            }
             if mod == "live":
-                mapping = {
-                    "trafic":      self._trafic.layout,
-                    "statistici":  self._statistici.layout,
-                    "alerte":      self._alerte.layout,
-                    "comunicatii": self._comun.layout,
-                    "setari":      self._setari.layout,
-                }
-                return mapping.get(sectiune, lambda: [])()
-            return self._pasiv.layout()
+                return {**pad}, {**pad, "display": "none"}
+            return {**pad, "display": "none"}, pad
+
+        @self.app.callback(
+            Output("nav-mod-sync", "data"),
+            Input("nav-mod", "data"),
+        )
+        def sync_mod_cu_state(mod):
+            if mod == "live":
+                self.state.activeaza_mod_live()
+            else:
+                self.state.enter_pasiv_mode()
+            return mod or "live"
 
         # Interfete active
         @self.app.callback(

@@ -161,7 +161,8 @@ class ManagerSesiuneInterfata:
                               src_port=None, dst_port=None,
                               protocol=None, tcp_flags=None,
                               min_len=None, max_len=None,
-                              ip_exclus=None, limit=500, min_id=None):
+                              ip_exclus=None, limit=500, min_id=None,
+                              ts_min=None, ts_max=None):
         cond = []; params = []
         if src_ip   and str(src_ip).strip():
             cond.append("src_ip LIKE ?");    params.append(f"%{src_ip.strip()}%")
@@ -179,12 +180,17 @@ class ManagerSesiuneInterfata:
             cond.append("packet_len >= ?");  params.append(int(min_len))
         if max_len is not None:
             cond.append("packet_len <= ?");  params.append(int(max_len))
+        if ts_min is not None:
+            cond.append("timestamp >= ?");   params.append(float(ts_min))
+        if ts_max is not None:
+            cond.append("timestamp <= ?");   params.append(float(ts_max))
         if ip_exclus:
             cond.append("src_ip != ?");      params.append(ip_exclus)
             cond.append("dst_ip != ?");      params.append(ip_exclus)
         if min_id is not None:
             cond.append("id > ?");           params.append(int(min_id))
         where = ("WHERE " + " AND ".join(cond)) if cond else ""
+        order = "ORDER BY id ASC" if min_id is not None else "ORDER BY timestamp DESC"
         params.append(limit)
         self.flush()
         with self._lock:
@@ -192,15 +198,18 @@ class ManagerSesiuneInterfata:
             cur.execute(f"""
                 SELECT id,timestamp,src_ip,dst_ip,src_port,dst_port,
                        protocol,packet_len,tcp_flags
-                FROM packets {where} ORDER BY timestamp DESC LIMIT ?
+                FROM packets {where} {order} LIMIT ?
             """, params)
             rows = [dict(r) for r in cur.fetchall()]
             cur.close()
         return rows
 
     def get_statistici_ip(self, limit=100, ip_exclus=None):
-        ec1 = f"AND src_ip != '{ip_exclus}'" if ip_exclus else ""
-        ec2 = f"AND dst_ip != '{ip_exclus}'" if ip_exclus else ""
+        filtru_src = "AND src_ip != ?" if ip_exclus else ""
+        filtru_dst = "AND dst_ip != ?" if ip_exclus else ""
+        params = ([ip_exclus] if ip_exclus else []) + \
+                ([ip_exclus] if ip_exclus else []) + \
+                [limit]
         self.flush()
         with self._lock:
             cur = self._get_con().cursor()
@@ -217,14 +226,14 @@ class ManagerSesiuneInterfata:
                 FROM (
                     SELECT src_ip AS ip, COUNT(*) AS pkt_out, 0 AS pkt_in,
                            SUM(packet_len) AS bytes_out, 0 AS bytes_in
-                    FROM packets WHERE src_ip IS NOT NULL {ec1} GROUP BY src_ip
+                    FROM packets WHERE src_ip IS NOT NULL {filtru_src} GROUP BY src_ip
                     UNION ALL
                     SELECT dst_ip AS ip, 0 AS pkt_out, COUNT(*) AS pkt_in,
                            0 AS bytes_out, SUM(packet_len) AS bytes_in
-                    FROM packets WHERE dst_ip IS NOT NULL {ec2} GROUP BY dst_ip
+                    FROM packets WHERE dst_ip IS NOT NULL {filtru_dst} GROUP BY dst_ip
                 )
                 GROUP BY ip ORDER BY pachete_total DESC LIMIT ?
-            """, (limit,))
+            """, params)
             rows = [dict(r) for r in cur.fetchall()]
             cur.close()
         return rows
@@ -255,6 +264,27 @@ class ManagerSesiuneInterfata:
             cur.close()
         return rows
 
+    def get_ip_uri_corespondente(self, ip_gazda, limit=200):
+        """Returnează IP-urile care au comunicat direct cu ip_gazda."""
+        con = self._get_conexiune()
+        cur = con.cursor()
+        # Selectăm IP-urile care apar ca destinație când gazda e sursă 
+        # ȘI IP-urile care apar ca sursă când gazda e destinație
+        cur.execute(f"""
+            SELECT DISTINCT ip FROM (
+                SELECT dst_ip AS ip FROM packets WHERE src_ip = ?
+                UNION
+                SELECT src_ip AS ip FROM packets WHERE dst_ip = ?
+            ) WHERE ip IS NOT NULL AND ip != ?
+            LIMIT ?
+        """, (ip_gazda, ip_gazda, ip_gazda, limit))
+        
+        # Adaptăm în funcție de cum returnează cursurul tău (listă de tupluri sau dict-uri)
+        rows = cur.fetchall()
+        res = [r[0] if isinstance(r, tuple) else r['ip'] for r in rows]
+        cur.close()
+        return res
+
     def get_avg_pachete_per_secunda(self, interval_secunde=60):
         ts_start = time.time() - interval_secunde
         self.flush()
@@ -272,7 +302,8 @@ class ManagerSesiuneInterfata:
     def get_pachete_per_secunda_per_ip(self, interval_secunde=300,
                                         bucket_secunde=10, ip_exclus=None):
         ts = time.time() - interval_secunde
-        ec = f"AND src_ip != '{ip_exclus}'" if ip_exclus else ""
+        ec = "AND src_ip != ?" if ip_exclus else ""
+        params_ec = [ip_exclus] if ip_exclus else []
         self.flush()
         with self._lock:
             cur = self._get_con().cursor()
@@ -284,7 +315,7 @@ class ManagerSesiuneInterfata:
                 WHERE timestamp>={ts} AND src_ip IS NOT NULL {ec}
                 GROUP BY ts_bucket, src_ip
                 ORDER BY ts_bucket, cnt DESC
-            """)
+            """, params_ec)
             rows = [dict(r) for r in cur.fetchall()]
             cur.close()
         return rows

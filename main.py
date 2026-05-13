@@ -1,4 +1,3 @@
-"""main.py - Punct de intrare principal"""
 import os
 import sys, time, threading, traceback, webbrowser, ctypes
 
@@ -6,7 +5,7 @@ from db          import ManagerBazaDate
 from db_interfata import ManagerSesiuneInterfata
 from capture     import AnalistPachete
 from detector    import ManagerDetectie
-from ml_detector import DetectorAnomalii, ColectorBaseline
+from ml_detector import DetectorAnomalii
 from dashboard_utils import get_ip_gazda
 from fim         import MonitorIntegritateFisiere
 from backup      import BackupMultiplu, BackupSyslogVM, BackupFolderLocal, BackupNoop
@@ -48,6 +47,7 @@ class AplicatieMonitorRetea:
         self.fim = MonitorIntegritateFisiere(
             db=self.db_manager,
             backup=self.backup)
+        self.state.fim_monitor = self.fim
 
         self.detector_ml = DetectorAnomalii(
             db=self.db_manager,

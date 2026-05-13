@@ -1,7 +1,11 @@
 """app_state.py - Starea globala partajata intre toate componentele."""
 import os
 import threading
+import tempfile
+import shutil
 from db import ManagerBazaDate
+
+_IMPORT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 ML_MODEL_PATH = "hids_model.pkl"
 
@@ -42,6 +46,13 @@ class AppState:
         import time as _time
         self.sesiune_start: float = _time.time()
 
+        # Referinta la MonitorIntegritateFisiere (setata din main.py) pentru adaugari din UI
+        self.fim_monitor = None
+
+        # Calea fisierului .db selectat la incarcare pasiva (pentru scan repetat)
+        self._cale_pasiv_original: str | None = None
+        self._pasiv_scan_tmp: str | None = None
+
     def get_manager_interfata(self, iface_name: str = None):
         """
         Returneaza managerul per-interfata pentru iface_name.
@@ -62,8 +73,15 @@ class AppState:
 
     def activeaza_mod_pasiv(self, cale_db: str) -> bool:
         try:
+            if self._pasiv_scan_tmp and os.path.isfile(self._pasiv_scan_tmp):
+                try:
+                    os.unlink(self._pasiv_scan_tmp)
+                except OSError:
+                    pass
+                self._pasiv_scan_tmp = None
             self.db_pasiv = ManagerBazaDate(cale_db, read_only=True)
             self.mod = "pasiv"
+            self._cale_pasiv_original = os.path.abspath(cale_db)
             print(f"[STATE] Mod pasiv activ: {cale_db}")
             return True
         except Exception as e:
@@ -71,9 +89,80 @@ class AppState:
             return False
 
     def activeaza_mod_live(self):
-        self.mod      = "live"
-        self.db_pasiv = None
+        """Live foloseste db_live; pastram db_pasiv pentru revenire la Pasiv."""
+        self.mod = "live"
         print("[STATE] Mod live activ")
+
+    def enter_pasiv_mode(self):
+        """UI Pasiv (fara a incarca neaparat un fisier nou)."""
+        self.mod = "pasiv"
+
+    def scan_reguli_pe_captura_pasiva(self, ip_gazda: str) -> tuple[bool, str]:
+        """
+        Copie RW a DB-ului pasiv, ruleaza detectorii built-in + reguli custom
+        din db_live pe pachetele din captura (moment referinta = MAX(timestamp)).
+        """
+        from detector import ManagerDetectie
+        from backup import BackupNoop
+        from enrichment import EnrichmentService
+
+        if not self._cale_pasiv_original or not os.path.isfile(
+                self._cale_pasiv_original):
+            return False, "Încarcă mai întâi un fișier .db în modul Pasiv."
+
+        if self._pasiv_scan_tmp and os.path.isfile(self._pasiv_scan_tmp):
+            try:
+                os.unlink(self._pasiv_scan_tmp)
+            except OSError:
+                pass
+            self._pasiv_scan_tmp = None
+
+        fd, tmp = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            shutil.copy2(self._cale_pasiv_original, tmp)
+        except OSError as e:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            return False, f"Nu pot copia baza: {e}"
+
+        self._pasiv_scan_tmp = tmp
+        mdb = ManagerBazaDate(tmp, read_only=False)
+        ref_ts = mdb.get_max_packet_timestamp()
+        if ref_ts is None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            self._pasiv_scan_tmp = None
+            return False, "Nu există pachete în captură."
+
+        geo_dir = os.path.join(_IMPORT_DIR, "geoip")
+        enrich = EnrichmentService(ip_gazda=ip_gazda, geoip_dir=geo_dir)
+        mgr = ManagerDetectie(
+            mdb,
+            backup=BackupNoop(),
+            sursa="pasiv_scan",
+            ip_gazda=ip_gazda,
+            enrichment=enrich,
+            reguli_db=self.db_live,
+        )
+        try:
+            mgr.ruleaza_o_data(reference_time=ref_ts)
+        except Exception as e:
+            print(f"[STATE] Eroare scan pasiv: {e}")
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            self._pasiv_scan_tmp = None
+            return False, f"Eroare la scanare: {e}"
+
+        self.db_pasiv = mdb
+        self.mod = "pasiv"
+        return True, "✓ Scan complet (reguli built-in + custom din DB live)."
 
     # ── ML status (thread-safe) ───────────────────────────────────────────────
 
