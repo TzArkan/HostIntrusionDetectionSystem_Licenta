@@ -1,5 +1,3 @@
-"""enrichment.py - Servicii de enrichment contextual pentru alerte."""
-
 from __future__ import annotations
 
 import ipaddress
@@ -12,19 +10,18 @@ from typing import Any
 
 try:
     import psutil
-except Exception:  # pragma: no cover - optional dependency
+except Exception: 
     psutil = None
 
 try:
     import geoip2.database
-except Exception:  # pragma: no cover - optional dependency
+except Exception: 
     geoip2 = None
 else:
     geoip2 = geoip2
 
 
 class TTLCache:
-    """Cache simplu cu TTL per cheie."""
 
     def __init__(self):
         self._data: dict[str, tuple[float, Any]] = {}
@@ -47,12 +44,6 @@ class TTLCache:
 
 
 class EnrichmentService:
-    """
-    Serviciu unificat pentru:
-      - rDNS (domain lookup)
-      - mapare port local -> proces (psutil)
-      - GeoIP/ASN (MaxMind GeoLite2)
-    """
 
     def __init__(self, ip_gazda: str | None = None, geoip_dir: str | None = None):
         self.ip_gazda = ip_gazda
@@ -97,7 +88,6 @@ class EnrichmentService:
             return fut.result(timeout=timeout_sec)
 
     def resolve_domain(self, ip: str | None, timeout_sec: float = 0.25) -> str | None:
-        """Returneaza rDNS pentru IP public, cu cache + negative caching."""
         self._inc("dns_total")
         if not self._is_public_ip(ip):
             return None
@@ -127,7 +117,6 @@ class EnrichmentService:
         local_port: str | int | None,
         protocol: str | None,
     ) -> dict | None:
-        """Mapeaza tuple local_ip:local_port la proces local."""
         self._inc("process_total")
         if psutil is None:
             return None
@@ -193,7 +182,6 @@ class EnrichmentService:
                     self._geo_asn_reader = False
 
     def resolve_geo_asn(self, ip: str | None) -> dict | None:
-        """Returneaza context geografic si ASN pentru IP public."""
         self._inc("geo_total")
         if not self._is_public_ip(ip):
             return None
@@ -228,7 +216,6 @@ class EnrichmentService:
         return result
 
     def enrich_alert_context(self, src_ip: str | None, dst_ip: str | None) -> dict:
-        """Calculeaza context compact pentru o alerta."""
         context = {
             "src_domain": self.resolve_domain(src_ip),
             "dst_domain": self.resolve_domain(dst_ip),

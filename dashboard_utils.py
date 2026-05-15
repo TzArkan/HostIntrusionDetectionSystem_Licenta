@@ -1,12 +1,7 @@
-"""
-dashboard_utils.py - Constante de tema, helper-e UI si detectare IP gazda.
-Importat de toate modulele dashboard_*.py.
-"""
 import socket
 from dash import html, dcc
 import plotly.graph_objects as go
 
-# ─── CULORI / TEMA ────────────────────────────────────────────────────────────
 DARK   = "#0f172a"
 CARD   = "#1e293b"
 TEXT   = "#e2e8f0"
@@ -32,10 +27,8 @@ PLOTLY_LAYOUT = dict(
     yaxis=dict(gridcolor=BORDER, color=MUTED),
 )
 
-# ─── DETECTARE IP GAZDA ───────────────────────────────────────────────────────
 
-def get_ip_gazda() -> str:
-    """Detecteaza IP-ul masinii gazda prin conexiune UDP fictiva la 8.8.8.8."""
+def get_ip_gazda() -> str:                              
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -45,10 +38,8 @@ def get_ip_gazda() -> str:
     except Exception:
         return "127.0.0.1"
 
-# ─── HELPER-E UI GENERALE ────────────────────────────────────────────────────
 
 def inp(extra: dict = None) -> dict:
-    """Stilul standard pentru dcc.Input."""
     s = {"backgroundColor": DARK, "color": TEXT,
          "border": f"1px solid {BORDER}", "borderRadius": "6px",
          "padding": "6px 10px", "fontSize": "13px"}
@@ -57,12 +48,10 @@ def inp(extra: dict = None) -> dict:
     return s
 
 def lbl() -> dict:
-    """Stilul standard pentru Label."""
     return {"fontSize": "12px", "color": MUTED,
             "display": "block", "marginBottom": "3px"}
 
 def btn(bg: str = BORDER, fg: str = TEXT, extra: dict = None) -> dict:
-    """Stilul standard pentru html.Button."""
     s = {"background": bg, "color": fg, "border": "none",
          "borderRadius": "6px", "padding": "6px 14px",
          "cursor": "pointer", "fontSize": "12px", "fontWeight": "600"}
@@ -71,7 +60,6 @@ def btn(bg: str = BORDER, fg: str = TEXT, extra: dict = None) -> dict:
     return s
 
 def card(continut, extra: dict = None):
-    """Wrapper card cu fundal CARD si border-radius."""
     s = {"backgroundColor": CARD, "borderRadius": "10px",
          "padding": "16px", "marginBottom": "14px"}
     if extra:
@@ -79,7 +67,6 @@ def card(continut, extra: dict = None):
     return html.Div(continut, style=s)
 
 def badge_sev(sev: str):
-    """Badge colorat pentru severitate."""
     c = SEV_CULORI.get(sev, MUTED)
     return html.Span(sev, style={
         "backgroundColor": c + "22", "color": c,
@@ -89,7 +76,6 @@ def badge_sev(sev: str):
     })
 
 def sectiune_titlu(text: str):
-    """Titlu de sectiune (uppercase, mic)."""
     return html.P(text, style={
         "color": MUTED, "fontSize": "11px", "margin": "0 0 8px 0",
         "fontWeight": "600", "textTransform": "uppercase",
@@ -120,7 +106,6 @@ STYLE_DATA_COND_PROTO = [
     {"if": {"filter_query": '{protocol} = "OTHER"'},"color": "#d8b4fe"},
 ]
 
-# Stiluri tab-uri (reutilizate in mai multe locuri)
 TAB_STYLE     = {"backgroundColor": CARD,  "color": MUTED,  "border": "none",
                  "padding": "8px 18px", "fontSize": "13px"}
 TAB_SEL_STYLE = {"backgroundColor": DARK,  "color": TEXT,
@@ -132,12 +117,7 @@ MAIN_TAB_SEL_STYLE = {"backgroundColor": CARD,  "color": TEXT,
                       "borderBottom": f"2px solid {ACCENT}",
                       "padding": "12px 28px", "fontSize": "14px", "fontWeight": "600"}
 
-# ─── ML BUTTON HELPERS ────────────────────────────────────────────────────────
-# Trei clase vizuale pentru butoanele ML: verde (actiune pozitiva),
-# rosu (actiune distructiva/oprire), gri (dezactivat).
-
 def btn_ml_verde(extra: dict = None) -> dict:
-    """Buton ML activ — actiune pozitiva (pornire, activare, reantreneaza)."""
     s = {
         "background": "#166534", "color": "#86efac",
         "border": "none", "borderRadius": "6px",
@@ -150,7 +130,6 @@ def btn_ml_verde(extra: dict = None) -> dict:
     return s
 
 def btn_ml_rosu(extra: dict = None) -> dict:
-    """Buton ML activ — actiune distructiva (oprire, stergere, dezactivare)."""
     s = {
         "background": "#7f1d1d", "color": "#fca5a5",
         "border": "none", "borderRadius": "6px",
@@ -163,7 +142,6 @@ def btn_ml_rosu(extra: dict = None) -> dict:
     return s
 
 def btn_ml_gri(extra: dict = None) -> dict:
-    """Buton ML dezactivat — nu poate fi apasat."""
     s = {
         "background": "#1e293b", "color": "#475569",
         "border": f"1px solid {BORDER}", "borderRadius": "6px",
@@ -178,19 +156,15 @@ def btn_ml_gri(extra: dict = None) -> dict:
 
 def grup_input_validat(
     id_input: str,
-    tip: str = "text",          # "text" | "number"
+    tip: str = "text",        
     placeholder: str = "",
     stil_extra: dict = None,
-    regex: str = None,          # regex JS (string) pentru filtrare caractere
+    regex: str = None,        
     mesaj_eroare: str = "",
     debounce: bool = True,
     **kwargs_input,
 ):
-    """
-    Returnează un html.Div cu:
-      - dcc.Input (cu data-regex și data-eroare pentru clientside)
-      - html.Div pentru mesajul de eroare (popup mic)
-    """
+    
     stil_input = inp(stil_extra or {})
     return html.Div([
         dcc.Input(
@@ -216,7 +190,7 @@ def grup_input_validat(
                 "fontSize":        "11px",
                 "zIndex":          "999",
                 "whiteSpace":      "nowrap",
-                "display":         "none",   # ascuns implicit
+                "display":         "none",   
                 "boxShadow":       "0 4px 12px rgba(0,0,0,0.5)",
                 "pointerEvents":   "none",
             },

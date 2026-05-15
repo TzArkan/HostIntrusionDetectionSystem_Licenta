@@ -1,7 +1,3 @@
-"""
-dashboard_pasiv.py - Sectiunea Analiza Pasiva.
-Selectie fisier DB extern (tkinter), sub-taburi Trafic si Alerte.
-"""
 from dash import dcc, html
 from dash.dependencies import Input, Output, State
 
@@ -9,23 +5,18 @@ from dashboard_utils import (
     btn, card, ACCENT, MUTED, CARD, DARK, BORDER,
     TAB_STYLE, TAB_SEL_STYLE,
 )
-from dashboard_trafic import SecțiuneTrafic
-from dashboard_alerte import SecțiuneAlerte
+from dashboard_trafic import SectiuneTrafic
+from dashboard_alerte import SectiuneAlerte
 from dashboard_utils import get_ip_gazda
 
 
-class SecțiunePasiva:
-    """
-    Incarca un fisier .db SQLite extern (read-only) si afiseaza
-    Trafic si Alerte din acel fisier.
-    Managerul de fisiere nativ Windows e deschis prin tkinter.filedialog.
-    """
+class SectiunePasiva:
 
     def __init__(self, app_state):
         self.state  = app_state
         ip_g        = get_ip_gazda()
-        self.trafic = SecțiuneTrafic(app_state, ip_g, prefix="pt")
-        self.alerte = SecțiuneAlerte(app_state,       prefix="pa")
+        self.trafic = SectiuneTrafic(app_state, ip_g, prefix="pt")
+        self.alerte = SectiuneAlerte(app_state,       prefix="pa")
 
     def layout(self):
         return html.Div([
@@ -94,7 +85,6 @@ class SecțiunePasiva:
             except Exception as e:
                 return None, f"Eroare: {e}"
 
-        # ── Incarca DB ────────────────────────────────────────────────────────
         @app.callback(
             Output("p-load-status", "children"),
             Output("p-continut",    "children"),
@@ -122,7 +112,6 @@ class SecțiunePasiva:
             ]
             return f"✓ DB incarcat: {cale}", continut
 
-        # ── Randeaza sub-tab ──────────────────────────────────────────────────
         @app.callback(
             Output("p-subtab-content", "children"),
             Input("p-subtabs", "value"),
@@ -134,6 +123,5 @@ class SecțiunePasiva:
                 return self.alerte.layout()
             return []
 
-        # Inregistram callbacks pentru sectiunile pasive
         self.trafic.register_callbacks(app)
         self.alerte.register_callbacks(app)

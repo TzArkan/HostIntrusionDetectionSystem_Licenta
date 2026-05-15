@@ -1,8 +1,3 @@
-"""
-capture.py - Captura pachete de retea cu Scapy
-IMPORTANT: Trebuie rulat ca Administrator (Windows) sau root (Linux/Mac)
-"""
-
 import time
 import socket
 import threading
@@ -12,7 +7,6 @@ from scapy.all import (
 import ipaddress
 
 
-# Cuvinte cheie care indica adaptoare VIRTUALE — excluse din selectia automata
 _VIRTUAL_KEYWORDS = (
     "virtualbox", "vmware", "vmnet", "vbox",
     "hyper-v", "hyper_v", "hyperv",
@@ -21,7 +15,6 @@ _VIRTUAL_KEYWORDS = (
     "isatap", "6to4",
 )
 
-# Cuvinte cheie care indica adaptoare FIZICE — preferate
 _PHYSICAL_KEYWORDS = (
     "wi-fi", "wifi", "wireless", "wlan",
     "ethernet", "eth", "lan", "realtek",
@@ -31,8 +24,7 @@ _PHYSICAL_KEYWORDS = (
 
 
 class AnalistPachete:
-    def __init__(self, manager_baza_date, interfata=None,
-                 interfete_manuale=None, app_state=None):
+    def __init__(self, manager_baza_date, interfata=None, interfete_manuale=None, app_state=None):
         self.db                = manager_baza_date
         self.interfata         = interfata
         self.interfete_manuale = interfete_manuale
@@ -40,7 +32,6 @@ class AnalistPachete:
         self._activ            = threading.Event()
         self._activ.set()
         self._threads          = []
-        # Mapa GUID/nume → nume prietenos (populata in _gaseste_toate_interfetele)
         self._guid_to_name: dict = {}
 
         self._retele_private = [
@@ -59,23 +50,14 @@ class AnalistPachete:
             return False
 
     def _este_virtuala(self, name: str) -> bool:
-        """Returneaza True daca interfata pare a fi virtuala/software."""
         name_lower = name.lower()
         return any(k in name_lower for k in _VIRTUAL_KEYWORDS)
 
     def _este_fizica(self, name: str) -> bool:
-        """Returneaza True daca interfata pare a fi fizica."""
         name_lower = name.lower()
         return any(k in name_lower for k in _PHYSICAL_KEYWORDS)
 
     def _gaseste_interfata(self):
-        """
-        Selecteaza interfata optima pentru captura:
-        1. Listeaza TOATE interfetele disponibile (pentru debug)
-        2. Exclude adaptoarele virtuale (VirtualBox, VMware, Hyper-V, TAP)
-        3. Prefera adaptoare fizice (WiFi, Ethernet real)
-        4. Dintre fizice, alege cel cu IP privat care nu e loopback
-        """
         print("[CAPTURE] Interfete disponibile:")
         candidati_fizici  = []
         candidati_altii   = []
@@ -83,34 +65,29 @@ class AnalistPachete:
         for guid, iface in IFACES.items():
             name = getattr(iface, "name", str(guid))
             ip   = getattr(iface, "ip",   None)
-            print(f"  {'[VIRTUAL]' if self._este_virtuala(name) else '[fizica] ':10} "
-                  f"{name:50} IP: {ip or '-'}")
+            print(f"  {'[VIRTUAL]' if self._este_virtuala(name) else '[fizica] ':10} " f"{name:50} IP: {ip or '-'}")
 
             if not ip or not self._este_privata(ip):
                 continue
-            # Sarim loopback
             if ip.startswith("127."):
                 continue
 
             if self._este_virtuala(name):
-                continue   # excludem explicit adaptoarele virtuale
+                continue   
 
             if self._este_fizica(name):
                 candidati_fizici.append((guid, iface, ip, name))
             else:
                 candidati_altii.append((guid, iface, ip, name))
 
-        # Preferam fizice
         for guid, iface, ip, name in candidati_fizici:
             print(f"[CAPTURE] ✓ Interfata selectata (fizica): {name} ({ip})")
             return guid
 
-        # Fallback: orice non-virtual cu IP privat
         for guid, iface, ip, name in candidati_altii:
             print(f"[CAPTURE] ⚠ Interfata selectata (fallback): {name} ({ip})")
             return guid
 
-        # Ultimul resort: interfata implicita Scapy
         fallback = str(conf.iface)
         print(f"[CAPTURE] ⚠ Folosim interfata implicita Scapy: {fallback}")
         print("[CAPTURE] ATENTIE: Verifica manual daca e interfata corecta!")
@@ -136,8 +113,7 @@ class AnalistPachete:
                 0x08: "P", 0x10: "A", 0x20: "U",
             }
             flags_int = int(pachet[TCP].flags)
-            tcp_flags = "".join(v for k, v in flag_map.items()
-                                if flags_int & k) or "0"
+            tcp_flags = "".join(v for k, v in flag_map.items() if flags_int & k) or "0"
 
         elif UDP in pachet:
             protocol = "UDP"
@@ -146,8 +122,8 @@ class AnalistPachete:
 
         elif ICMP in pachet:
             protocol = "ICMP"      
-            src_port = str(pachet[ICMP].type)  # Salvăm Tipul ICMP (8 = Request, 0 = Reply)
-            dst_port = str(pachet[ICMP].code)  # Salvăm Codul ICMP
+            src_port = str(pachet[ICMP].type)  
+            dst_port = str(pachet[ICMP].code)  
 
         params = dict(
             timestamp  = time.time(),
@@ -160,17 +136,13 @@ class AnalistPachete:
             tcp_flags  = tcp_flags,
         )
         try:
-            # 1. Global DB — pentru detectori (trafic_retea.db)
             self.db.inserare_pachet(**params)
 
-            # 2. Per-interfata DB — pentru dashboard
             if interfata_manager is not None:
                 interfata_manager.inserare_pachet(**params)
             elif self.app_state and self.app_state.manageri_interfete:
-                # sniffed_on: GUID-ul sau numele interfetei pe care a venit pachetul
                 iface_raw  = getattr(pachet, "sniffed_on", None)
-                iface_name = self._guid_to_name.get(
-                    str(iface_raw), str(iface_raw) if iface_raw else None)
+                iface_name = self._guid_to_name.get(str(iface_raw), str(iface_raw) if iface_raw else None)
                 if iface_name and iface_name in self.app_state.manageri_interfete:
                     self.app_state.manageri_interfete[iface_name].inserare_pachet(
                         **params)
@@ -189,10 +161,6 @@ class AnalistPachete:
             return None
 
     def _gaseste_toate_interfetele(self) -> list:
-        """
-        Returneaza lista GUID-urilor interfetelor relevante si
-        populeaza self.app_state.interfete_active cu detalii pentru UI.
-        """
         fizice   = []
         virtuale = []
 
@@ -208,19 +176,14 @@ class AnalistPachete:
             except ValueError:
                 continue
 
-            skip_keywords = (
-                "hyper-v", "hyperv", "wan miniport",
-                "teredo", "isatap", "6to4", "pseudo",
-            )
+            skip_keywords = ("hyper-v", "hyperv", "wan miniport","teredo", "isatap", "6to4", "pseudo",)
             name_lower = name.lower()
             if any(k in name_lower for k in skip_keywords):
                 continue
 
             if self._este_fizica(name):
                 fizice.append((guid, name, ip, "fizica"))
-            elif any(k in name_lower for k in ("virtualbox", "vmware",
-                                                "vmnet", "vbox", "tap",
-                                                "host-only")):
+            elif any(k in name_lower for k in ("virtualbox", "vmware","vmnet", "vbox", "tap", "host-only")):
                 virtuale.append((guid, name, ip, "virtuala"))
 
         guids    = []
@@ -230,7 +193,7 @@ class AnalistPachete:
             guids.append(guid)
             detalii.append({"name": name, "ip": ip, "tip": tip})
             self._guid_to_name[str(guid)] = name
-            self._guid_to_name[name]      = name   # si dupa nume direct
+            self._guid_to_name[name]      = name   
             print(f"[CAPTURE] ✓ {tip:8} {name} ({ip})")
 
         for guid, name, ip, tip in virtuale:
@@ -240,33 +203,28 @@ class AnalistPachete:
             self._guid_to_name[name]      = name
             print(f"[CAPTURE] ✓ {tip:8} {name} ({ip})")
 
-        # Scriem in app_state pentru a fi afisate in dashboard
         if self.app_state is not None:
             self.app_state.interfete_active = detalii
 
         return guids
 
     def _rezolva_guid(self, name: str):
-        """Gaseste GUID-ul Scapy pentru un nume de interfata."""
         name_lower = name.lower().strip()
         for guid, iface in IFACES.items():
             iface_name = getattr(iface, "name", "").lower().strip()
             if name_lower in iface_name or iface_name in name_lower:
                 return guid
-        # Daca nu gasim, returnam numele direct (Scapy il poate accepta si asa)
         return name
 
     def _listeaza_toate(self):
-        """Afiseaza toate interfetele disponibile pentru debug."""
-        print("[CAPTURE] ── Toate interfetele disponibile ──")
+        print("[CAPTURE] Toate interfetele disponibile: ")
         for guid, iface in IFACES.items():
             name = getattr(iface, "name", str(guid))
             ip   = getattr(iface, "ip",   "-")
             print(f"[CAPTURE]   {name:50} IP: {ip}")
-        print("[CAPTURE] ────────────────────────────────────")
+        print("[CAPTURE] Am terminat de afisat interfetele")
 
     def start_captura_pachete(self):
-        # ── Determina interfetele si GUID-urile ───────────────────────────────
         if self.interfete_manuale:
             ifaces  = [self._rezolva_guid(n) for n in self.interfete_manuale]
             detalii = [{"name": n, "ip": "—", "tip": "manuala"}
@@ -293,8 +251,6 @@ class AnalistPachete:
         bpf_filter = "ip"
         print(f"[CAPTURE] Filtru BPF: {bpf_filter}")
 
-        # ── Porneste thread separat per interfata ─────────────────────────────
-        # Fiecare thread stie ce ManagerInterfata sa foloseasca pentru scriere.
         managers = {}
         if self.app_state:
             managers = self.app_state.manageri_interfete
@@ -302,15 +258,13 @@ class AnalistPachete:
         active = self.app_state.interfete_active if self.app_state else []
 
         def _face_callback(mgr):
-            """Closure care leaga un ManagerInterfata la callback."""
             def cb(pkt):
                 self._gestioneaza_pachet(pkt, interfata_manager=mgr)
             return cb
 
         threads = []
-        # (în interiorul metodei start_captura_pachete din capture.py)
+
         for i, guid in enumerate(ifaces):
-            # Gasim ManagerInterfata corespunzator (dupa nume interfata)
             mgr = None
             if i < len(active):
                 iface_name = active[i].get("name", "")
@@ -337,9 +291,8 @@ class AnalistPachete:
             print(f"[CAPTURE] Thread pornit: {guid}"
                   + (f" -> {mgr.interfata}" if mgr else " (fara manager interfata)"))
                   
-            time.sleep(0.5) # Oprește execuția jumătate de secundă înainte să lanseze următorul sniffer
+            time.sleep(0.5)
 
-        # Blocam thread-ul principal pana termina toti
         self._threads = threads
         for t in threads:
             t.join()

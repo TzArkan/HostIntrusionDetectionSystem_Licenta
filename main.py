@@ -1,5 +1,5 @@
-import os
-import sys, time, threading, traceback, webbrowser, ctypes
+import os                                                       
+import sys, time, threading, traceback, webbrowser, ctypes      
 
 from db          import ManagerBazaDate
 from db_interfata import ManagerSesiuneInterfata
@@ -59,9 +59,7 @@ class AplicatieMonitorRetea:
         self.dashboard = DashboardRetea(app_state=self.state)
 
     def _creeaza_manageri_interfete(self):
-        """Creeaza un ManagerSesiuneInterfata pentru fiecare interfata activa."""
-        folder = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              "hids_data")
+        folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hids_data")
         for iface in self.state.interfete_active:
             name = iface.get("name", "")
             if not name or name in self.state.manageri_interfete:
@@ -71,7 +69,6 @@ class AplicatieMonitorRetea:
             self.state.manageri_interfete[name] = mgr
             print(f"[MAIN] Manager interfata: {name}")
         if self.state.manageri_interfete:
-            # Seteaza prima interfata ca selectata implicit
             first = next(iter(self.state.manageri_interfete))
             self.state.interfata_selectata = first
 
@@ -90,37 +87,34 @@ class AplicatieMonitorRetea:
         except: return True
 
     def ruleaza(self):
-        print("=" * 50)
-        print("   HIDS - Monitor Retea & Detectie Intruziuni")
-        print("=" * 50)
+        print("HIDS - Monitor Retea & Detectie Intruziuni")
 
         if not self._este_admin():
-            print("[!] EROARE: Necesita drepturi de Administrator.")
+            print("EROARE: Aplicatia necesita drepturi de Administrator.")
             sys.exit(1)
 
         try:
-            print("[*] Initializare baza de date...")
+            print("1. Initializare baza de date...")
             self.db_manager.initializare_baza_date()
             self.db_manager.curata_sesiune()
 
-            print("[*] Pornire captura pachete...")
+            print("2. Pornire captura pachete...")
             self._capture_thread = threading.Thread(
                 target=self.analist.start_captura_pachete,
                 daemon=False,
                 name="capture-main")
             self._capture_thread.start()
 
-            # Asteptam detectia interfetelor (max 2s)
             for _ in range(20):
                 if self.state.interfete_active:
                     break
                 time.sleep(0.1)
             self._creeaza_manageri_interfete()
 
-            print("[*] Pornire detectori atacuri...")
+            print("3. Pornire detectori atacuri...")
             self.detector.start()
 
-            print("[*] Pornire monitor integritate fisiere...")
+            print("4. Pornire monitor integritate fisiere...")
             self.fim.start()
 
             threading.Thread(target=lambda: (
@@ -128,11 +122,11 @@ class AplicatieMonitorRetea:
                 webbrowser.open(f"http://{self.HOST}:{self.PORT}")
             ), daemon=True).start()
 
-            print(f"[*] Dashboard: http://{self.HOST}:{self.PORT}")
+            print(f"5. Dashboard: http://{self.HOST}:{self.PORT}")
             self.dashboard.start(debug=False)
 
         except KeyboardInterrupt:
-            print("\n[*] Oprire solicitata...")
+            print("\n6.  Oprire solicitata...")
         except Exception as e:
             print(f"\n[!] Eroare critica: {e}")
             traceback.print_exc()
@@ -142,7 +136,7 @@ class AplicatieMonitorRetea:
             self.fim.stop()
             if self._capture_thread and self._capture_thread.is_alive():
                 self._capture_thread.join(timeout=3)
-            print("[*] Aplicatie inchisa.")
+            print("7. Aplicatie inchisa.")
 
 
 if __name__ == "__main__":

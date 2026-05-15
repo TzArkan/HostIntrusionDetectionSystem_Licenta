@@ -1,4 +1,3 @@
-"""ml_detector.py - Detectia anomaliilor cu Isolation Forest (atacuri necunoscute)"""
 import time, os, threading
 try:
     from sklearn.ensemble import IsolationForest
@@ -13,15 +12,6 @@ from backup import BackupNoop
 
 
 class DetectorAnomalii(DetectorAtac):
-    """
-    Isolation Forest pentru detectia comportamentului anormal.
-    Faza 1 (baseline): antreneaza modelul pe trafic normal.
-    Faza 2 (detectie): prezice daca o fereastra de trafic e anomalie.
-
-    Atribute noi fata de versiunea initiala:
-        activ       - daca False, analizeaza() returneaza imediat (toggle din UI)
-        db_override - DB alternativ folosit la antrenare (fisier extern)
-    """
     NUME = "Anomalie ML"; SEVERITATE = "MEDIE"
     FEREASTRA_SECUNDE = 60
     CALE_MODEL = "hids_model.pkl"
@@ -29,11 +19,10 @@ class DetectorAnomalii(DetectorAtac):
     def __init__(self, db, backup=None, sursa="live", ip_gazda=None):
         super().__init__(db, backup, sursa, ip_gazda)
         self.model = None
-        self.activ = False   # activat explicit din UI (AppState.toggle_detectie_ml)
+        self.activ = False   
         self._incarcare_model()
 
     def _incarcare_model(self):
-        """Incarca modelul de pe disk daca exista."""
         if not ML_DISPONIBIL:
             return
         if os.path.exists(self.CALE_MODEL):
@@ -44,10 +33,6 @@ class DetectorAnomalii(DetectorAtac):
                 print(f"[ML] Eroare incarcare model: {e}")
 
     def _extrage_features(self, ts_start, ts_end, db=None):
-        """
-        Calculeaza features agregate dintr-o fereastra de timp.
-        Accepta un DB optional (pentru antrenare din fisier extern).
-        """
         db = db or self.db
         f  = db.get_features_fereastra(ts_start, ts_end)
         if not f or f.get("total_pachete", 0) == 0:
@@ -65,15 +50,7 @@ class DetectorAnomalii(DetectorAtac):
             f["cnt_syn"] / total,
         ]
 
-    def antreneaza_baseline(self, ore=48, progres_cb=None,
-                             stop_cb=None, db_override=None):
-        """
-        Antreneaza modelul pe datele istorice din DB.
-
-        Parametri noi:
-            stop_cb     - callable() -> bool; daca returneaza True, opreste antrenarea
-            db_override - instanta ManagerBazaDate alternativa (fisier extern)
-        """
+    def antreneaza_baseline(self, ore=48, progres_cb=None, stop_cb=None, db_override=None):
         if not ML_DISPONIBIL:
             print("[ML] scikit-learn nedisponibil, antrenarea nu e posibila.")
             return False
@@ -110,8 +87,7 @@ class DetectorAnomalii(DetectorAtac):
                   "Colecteaza mai mult trafic si reincearca.")
             return False
 
-        self.model = IsolationForest(contamination=0.05, random_state=42,
-                                     n_estimators=100)
+        self.model = IsolationForest(contamination=0.05, random_state=42, n_estimators=100)
         self.model.fit(X)
         joblib.dump(self.model, self.CALE_MODEL)
         print(f"[ML] Model antrenat pe {len(X)} ferestre, "
@@ -119,10 +95,9 @@ class DetectorAnomalii(DetectorAtac):
         return True
 
     def analizeaza(self, fereastra_secunde=60):
-        """Analizeaza fereastra curenta si emite alerta daca e anomalie."""
         if not ML_DISPONIBIL or not self.model:
             return
-        if not self.activ:      # detectia a fost dezactivata din UI
+        if not self.activ:      
             return
 
         ts_end   = time.time()

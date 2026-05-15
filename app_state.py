@@ -1,4 +1,3 @@
-"""app_state.py - Starea globala partajata intre toate componentele."""
 import os
 import threading
 import tempfile
@@ -11,16 +10,11 @@ ML_MODEL_PATH = "hids_model.pkl"
 
 
 class AppState:
-    """
-    Contine referintele la DB si modul curent (live/pasiv).
-    Gestioneaza si starea ML: antrenare, detectie activa/inactiva.
-    """
     def __init__(self, db_live: ManagerBazaDate):
         self.db_live  = db_live
         self.db_pasiv = None
-        self.mod      = "live"   # "live" sau "pasiv"
+        self.mod      = "live"   
 
-        # ── ML state ──────────────────────────────────────────────────────────
         self._ml_lock    = threading.Lock()
         self._ml_status  = "trained" if os.path.exists(ML_MODEL_PATH) else "ready"
         self._ml_stop    = False
@@ -31,42 +25,27 @@ class AppState:
         self.detectie_ml_activa = False
         self.detector_ml        = None
 
-        # Setat de AnalistPachete dupa detectia interfetelor
-        # Format: [{"name": "Wi-Fi", "ip": "192.168.1.x", "tip": "fizica"}, ...]
         self.interfete_active: list = []
 
-        # Dict {iface_name: ManagerSesiuneInterfata} — setat din main.py
         self.manageri_interfete: dict = {}
 
-        # Interfata selectata curent in dashboard (Trafic / Statistici)
-        # None = toate interfetele combinate
         self.interfata_selectata: str = None
 
-        # Timestamp pornire sesiune curente — folosit pentru filtrare alerte
         import time as _time
         self.sesiune_start: float = _time.time()
 
-        # Referinta la MonitorIntegritateFisiere (setata din main.py) pentru adaugari din UI
         self.fim_monitor = None
 
-        # Calea fisierului .db selectat la incarcare pasiva (pentru scan repetat)
         self._cale_pasiv_original: str | None = None
         self._pasiv_scan_tmp: str | None = None
 
     def get_manager_interfata(self, iface_name: str = None):
-        """
-        Returneaza managerul per-interfata pentru iface_name.
-        Daca iface_name e None sau nu exista, returneaza None (foloseste DB principal).
-        """
         if not iface_name or iface_name not in self.manageri_interfete:
             return None
         return self.manageri_interfete[iface_name]
 
-    # ── DB activ ──────────────────────────────────────────────────────────────
-
     @property
     def db(self) -> ManagerBazaDate:
-        """Returneaza DB-ul activ in functie de modul curent."""
         if self.mod == "pasiv" and self.db_pasiv:
             return self.db_pasiv
         return self.db_live
@@ -89,26 +68,20 @@ class AppState:
             return False
 
     def activeaza_mod_live(self):
-        """Live foloseste db_live; pastram db_pasiv pentru revenire la Pasiv."""
         self.mod = "live"
         print("[STATE] Mod live activ")
 
     def enter_pasiv_mode(self):
-        """UI Pasiv (fara a incarca neaparat un fisier nou)."""
         self.mod = "pasiv"
 
     def scan_reguli_pe_captura_pasiva(self, ip_gazda: str) -> tuple[bool, str]:
-        """
-        Copie RW a DB-ului pasiv, ruleaza detectorii built-in + reguli custom
-        din db_live pe pachetele din captura (moment referinta = MAX(timestamp)).
-        """
         from detector import ManagerDetectie
         from backup import BackupNoop
         from enrichment import EnrichmentService
 
         if not self._cale_pasiv_original or not os.path.isfile(
                 self._cale_pasiv_original):
-            return False, "Încarcă mai întâi un fișier .db în modul Pasiv."
+            return False, "Incarca mai intai un fisier .db in modul Pasiv."
 
         if self._pasiv_scan_tmp and os.path.isfile(self._pasiv_scan_tmp):
             try:
@@ -137,7 +110,7 @@ class AppState:
             except OSError:
                 pass
             self._pasiv_scan_tmp = None
-            return False, "Nu există pachete în captură."
+            return False, "Nu exista pachete in captura."
 
         geo_dir = os.path.join(_IMPORT_DIR, "geoip")
         enrich = EnrichmentService(ip_gazda=ip_gazda, geoip_dir=geo_dir)
@@ -164,8 +137,6 @@ class AppState:
         self.mod = "pasiv"
         return True, "✓ Scan complet (reguli built-in + custom din DB live)."
 
-    # ── ML status (thread-safe) ───────────────────────────────────────────────
-
     @property
     def ml_status(self) -> str:
         with self._ml_lock:
@@ -176,10 +147,7 @@ class AppState:
         with self._ml_lock:
             self._ml_status = val
 
-    # ── Utilitare ML ─────────────────────────────────────────────────────────
-
     def are_date(self) -> bool:
-        """Verifica daca exista suficiente pachete in DB-ul live (minim 50)."""
         try:
             cur = self.db_live._get_conexiune().cursor()
             cur.execute("SELECT COUNT(*) AS c FROM packets")
@@ -190,10 +158,6 @@ class AppState:
             return False
 
     def are_date_suficiente_ml(self) -> tuple[bool, str]:
-        """
-        Verifica daca exista cel putin 1 ora de date captate in DB.
-        Returneaza (ok: bool, mesaj: str).
-        """
         try:
             cur = self.db_live._get_conexiune().cursor()
             cur.execute("""
@@ -214,14 +178,7 @@ class AppState:
         except Exception as e:
             return False, f"Eroare verificare date: {e}"
 
-    # ── Antrenare ML ─────────────────────────────────────────────────────────
-
-    def incepe_antrenare(self, ore: float = 24.0,
-                          cale_db_extern: str = None) -> bool:
-        """
-        Porneste antrenarea modelului intr-un thread daemon.
-        Returneaza False daca o antrenare e deja in curs.
-        """
+    def incepe_antrenare(self, ore: float = 24.0, cale_db_extern: str = None) -> bool:
         if self.ml_status == "training":
             return False
         self._ml_stop  = False
@@ -266,7 +223,6 @@ class AppState:
         print("[STATE] Antrenare ML oprita de utilizator.")
 
     def sterge_model(self):
-        """Sterge fisierul model de pe disk, reseteaza detectorul si dezactiveaza detectia."""
         try:
             if os.path.exists(ML_MODEL_PATH):
                 os.remove(ML_MODEL_PATH)
@@ -280,10 +236,7 @@ class AppState:
         self.ml_status = "ready"
         self.ml_msg    = "Model sters. Poti reantrena oricand."
 
-    # ── Toggle detectie ML ────────────────────────────────────────────────────
-
     def toggle_detectie_ml(self) -> bool:
-        """Activeaza/dezactiveaza detectia ML. Returneaza noua stare."""
         self.detectie_ml_activa = not self.detectie_ml_activa
         if self.detector_ml:
             self.detector_ml.activ = self.detectie_ml_activa

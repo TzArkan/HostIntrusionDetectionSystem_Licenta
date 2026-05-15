@@ -1,7 +1,3 @@
-"""
-dashboard_statistici.py - Sectiunea Statistici: KPI-uri alerte + grafice trafic
-+ statistici per IP (dupa grafice).
-"""
 from datetime import datetime
 from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output
@@ -15,21 +11,13 @@ from dashboard_utils import (
 )
 
 
-class SecțiuneStatistici:
-    """
-    Afiseaza:
-    - KPI-uri: total alerte, in asteptare, nivel ridicat/critic, mediu, false positive
-    - KPI pachete/secunda (1 min si 5 min)
-    - Grafic pachete/secunda per IP sursa (exclus IP gazda)
-    - Grafic distributie protocol in timp (stacked bar)
-    """
+class SectiuneStatistici:
 
     def __init__(self, app_state, ip_gazda: str, prefix: str = "lst"):
         self.state    = app_state
         self.ip_gazda = ip_gazda
         self.P        = prefix
 
-    # ── Constructie KPI box ───────────────────────────────────────────────────
 
     @staticmethod
     def _kpi(valoare, eticheta: str, culoare: str = ACCENT):
@@ -48,19 +36,16 @@ class SecțiuneStatistici:
     def layout(self):
         p = self.P
         return html.Div([
-            # ── KPI alerte ────────────────────────────────────────────────────
             html.Div(id=f"{p}-kpi-alerte",
                      style={"display": "grid",
                             "gridTemplateColumns": "repeat(4, 1fr)",
                             "gap": "12px", "marginBottom": "12px"}),
 
-            # ── KPI pachete/secunda ───────────────────────────────────────────
             html.Div(id=f"{p}-kpi-pps",
                      style={"display": "grid",
                             "gridTemplateColumns": "repeat(3, 1fr)",
                             "gap": "12px", "marginBottom": "12px"}),
 
-            # ── Filtru Interfata pentru Grafice ───────────────────────────────
             html.Div([
                 html.Label("Filtreaza graficele pe interfata:", style={"color": MUTED, "fontSize": "12px", "marginRight": "10px"}),
                 dcc.Dropdown(id=f"{p}-graf-interfata",
@@ -69,18 +54,17 @@ class SecțiuneStatistici:
                              style={"backgroundColor": CARD, "color": TEXT, "fontSize": "12px", "width": "200px"})
             ], style={"display": "flex", "alignItems": "center", "marginBottom": "12px"}),
 
-            # ── Grafice ───────────────────────────────────────────────────────
             html.Div([
                 card([
                     sectiune_titlu(
-                        "Pachete/secundă per IP sursă (ultimele 5 minute)"),
+                        "Pachete/secunda per IP sursa (ultimele 5 minute)"),
                     dcc.Graph(id=f"{p}-graf-ip",
                               style={"height": "260px"},
                               config={"displayModeBar": False}),
                 ], {"marginBottom": "0"}),
                 card([
                     sectiune_titlu(
-                        "Distributie protocol în timp (ultimele 5 minute)"),
+                        "Distributie protocol in timp (ultimele 5 minute)"),
                     dcc.Graph(id=f"{p}-graf-proto",
                               style={"height": "260px"},
                               config={"displayModeBar": False}),
@@ -90,9 +74,9 @@ class SecțiuneStatistici:
 
             card([
                 sectiune_titlu(
-                    f"Statistici per IP (IP gazdă exclus: {self.ip_gazda})"),
+                    f"Statistici per IP (IP gazda exclus: {self.ip_gazda})"),
                 html.P(
-                    "Agregat după aceeași sursă ca graficele (filtru interfață de mai sus).",
+                    "Agregat dupa aceeasi sursa ca graficele (filtru interfata de mai sus).",
                     style={"fontSize": "11px", "color": MUTED, "margin": "0 0 10px 0"},
                 ),
                 dash_table.DataTable(
@@ -116,7 +100,6 @@ class SecțiuneStatistici:
         ])
 
     def _sursa_grafice(self, interfata_val):
-        """DB combinat (toate interfetele) sau sesiunea per-interfata pentru grafice."""
         if not interfata_val or interfata_val == "all":
             return self.state.db
         return self.state.get_manager_interfata(interfata_val)
@@ -136,7 +119,6 @@ class SecțiuneStatistici:
         )
         def actualizeaza(_, interfata_val):
 
-            # Populam optiunile
             optiuni_iface = [{"label": "Toate", "value": "all"}]
             if self.state.interfete_active:
                 for iface in self.state.interfete_active:
@@ -146,7 +128,6 @@ class SecțiuneStatistici:
 
             sursa = self._sursa_grafice(interfata_val)
 
-            # ── KPI alerte ────────────────────────────────────────────────────
             st = self.state.db.get_statistici_alerte()
             nivel_ridicat = st.get("critica", 0) + st.get("ridicata", 0)
             kpi_alerte = [
@@ -160,7 +141,6 @@ class SecțiuneStatistici:
                           "Nivel Mediu", "#fb923c"),
             ]
 
-            # ── KPI pachete/s ─────────────────────────────────────────────────
             pps_60  = self.state.db.get_avg_pachete_per_secunda(60)
             pps_300 = self.state.db.get_avg_pachete_per_secunda(300)
             kpi_pps = [
@@ -172,7 +152,6 @@ class SecțiuneStatistici:
                           "False Positive confirmate", "#86efac"),
             ]
 
-            # ── Grafic pachete/s per IP ───────────────────────────────────────
             rows_ip = []
             rows_pr = []
             if sursa is not None:
@@ -200,7 +179,6 @@ class SecțiuneStatistici:
 
             fig_ip.update_layout(**PLOTLY_LAYOUT, yaxis_title="pachete / 10s")
 
-            # ── Grafic distributie protocol ───────────────────────────────────
             fig_pr = go.Figure()
             if rows_pr:
                 protocoale = list({r["protocol"] for r in rows_pr})

@@ -1,5 +1,3 @@
-"""validators.py - Validare reutilizabila pentru input-uri text din UI."""
-
 from __future__ import annotations
 
 import ipaddress
@@ -53,9 +51,6 @@ def validate_rule_name(value: str | None) -> tuple[bool, str]:
     if not text:
         return False, "Numele regulii este obligatoriu."
     if not _RULE_RE.match(text):
-        return (
-            False,
-            "Nume invalid (3-64 caractere, litere/cifre/spatiu/-_().).",
-        )
+        return (False, "Nume invalid (3-64 caractere, litere/cifre/spatiu/-_().).",)
     return True, ""
 

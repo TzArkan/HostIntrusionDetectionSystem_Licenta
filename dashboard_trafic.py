@@ -1,7 +1,4 @@
-"""dashboard_trafic.py - Sectiunea Trafic Live cu filtre avansate."""
-
 from datetime import datetime, date
-
 import dash
 from dash import dcc, html, dash_table, Patch
 from dash.dependencies import Input, Output, State
@@ -22,7 +19,6 @@ _FILTRE = {
 
 
 def _parse_ts_input(val) -> float | None:
-    """Parseaza timp pentru filtru istoric; suporta data completa sau doar ora (azi)."""
     if val is None or not str(val).strip():
         return None
     s = str(val).strip()
@@ -64,7 +60,7 @@ def _format_pachet(pk: dict) -> dict:
     }
 
 
-class SecțiuneTrafic:
+class SectiuneTrafic:
 
     FLAGS_OPTS = [
         {"label": "Toate flagurile", "value": "all"},
@@ -92,11 +88,9 @@ class SecțiuneTrafic:
     def layout(self):
         p = self.P
         return html.Div([
-            # ── Selector interfata ────────────────────────────────────────────
             html.Div(id=f"{p}-iface-bar",
                      style={"marginBottom": "10px"}),
 
-            # ── Filtre ───────────────────────────────────────────────────────
             card([
                 html.Div([
                     html.Div([html.Label("IP Sursa:", style=lbl()),
@@ -171,12 +165,11 @@ class SecțiuneTrafic:
                 ),
             ], {"padding": "14px", "marginBottom": "12px"}),
 
-            # ── Tabel pachete ─────────────────────────────────────────────────
             card([
                 sectiune_titlu("Pachete recente"),
                 html.Div([
                     html.Button(
-                        "⏸ Pauză live",
+                        "⏸ Pauza live",
                         id=f"{p}-pause-btn",
                         n_clicks=0,
                         style={
@@ -221,7 +214,7 @@ class SecțiuneTrafic:
 
             dcc.Interval(id=f"{p}-interval", interval=2000, n_intervals=0),
             dcc.Store(id=f"{p}-iface-sel",
-                      data=None),   # numele interfetei selectate
+                      data=None),   
             dcc.Store(id=f"{p}-last-id", data=None),
             dcc.Store(id=f"{p}-manual-pause", data=False),
             dcc.Store(id=f"{p}-applied-filters", data={}),
@@ -243,7 +236,7 @@ class SecțiuneTrafic:
             if not n:
                 raise PreventUpdate
             new = not bool(cur)
-            label = "▶ Continuă live" if new else "⏸ Pauză live"
+            label = "▶ Continua live" if new else "⏸ Pauza live"
             return new, label
 
         @app.callback(
@@ -260,7 +253,6 @@ class SecțiuneTrafic:
             if not manageri:
                 return html.Div(), None
 
-            # Determina interfata selectata din click
             selectata = self.state.interfata_selectata
             ctx = callback_context
             if ctx.triggered:
@@ -321,7 +313,6 @@ class SecțiuneTrafic:
         def aplica_filtre(clicks, src_ip, dst_ip, src_port, dst_port, 
                           min_len, max_len, proto, flags, ts_start, ts_end):
             
-            # Validări de securitate în backend: dacă datele sunt proaste, oprim execuția
             for val in [src_ip, dst_ip]:
                 ok, _ = validate_ip(val, allow_empty=True)
                 if not ok: raise PreventUpdate
@@ -338,7 +329,6 @@ class SecțiuneTrafic:
             if ts_min is not None and ts_max is not None and ts_min > ts_max:
                 raise PreventUpdate
 
-            # Salvăm în memorie doar filtrele valide
             return {
                 "src_ip": src_ip, "dst_ip": dst_ip,
                 "src_port": src_port, "dst_port": dst_port,
@@ -347,7 +337,6 @@ class SecțiuneTrafic:
                 "ts_start": ts_start, "ts_end": ts_end
             }
 
-        # CALLBACK 2: Tabelul live care citește strict din sertar
         @app.callback(
             Output(f"{p}-table", "data"),
             Output(f"{p}-count", "children"),
@@ -355,16 +344,15 @@ class SecțiuneTrafic:
             Output(f"{p}-val-msg", "children"),
             Output(f"{p}-freeze-hint", "children"),
             
-            # Declanșatori
             Input(f"{p}-interval",   "n_intervals"),
             Input(f"{p}-iface-sel",  "data"),
             Input(f"{p}-manual-pause", "data"),
-            Input(f"{p}-applied-filters", "data"),  # Citim direct din sertar
+            Input(f"{p}-applied-filters", "data"),  
+            
             State(f"{p}-last-id",    "data"),
         )
         def actualizeaza(_, iface_sel, manual_pause, filtre, last_id):
             
-            # Extragem valorile din sertar (dacă e gol, setăm None)
             filtre = filtre or {}
             src_ip   = filtre.get("src_ip")
             dst_ip   = filtre.get("dst_ip")
@@ -389,8 +377,7 @@ class SecțiuneTrafic:
             if f"{p}-interval" in trig and freeze:
                 raise PreventUpdate
 
-            # Orice schimbare în sertar se consideră filtru nou
-            este_filtru = "applied-filters" in trig or "manual-pause" in trig
+            este_filtru = "applied-filters" in trig or "manual-pause" in trig or f"{p}-iface-sel" in trig
 
             mgr = self.state.get_manager_interfata(iface_sel)
 
@@ -410,9 +397,9 @@ class SecțiuneTrafic:
 
             hint = ""
             if time_window:
-                hint = "Interval istoric — fluxul live este oprit până ștergi Start / End."
+                hint = "Interval istoric — fluxul live este oprit pana stergi Start / End."
             elif manual_pause:
-                hint = "Pauză manuală — apasă „Continuă live” pentru a relua actualizarea."
+                hint = "Pauza manuala — apasa „Continua live” pentru a relua actualizarea."
 
             if este_filtru or last_id is None or time_window or ("manual-pause" in trig):
                 pachete = _fetch()

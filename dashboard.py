@@ -1,8 +1,3 @@
-"""
-dashboard.py - Orchestratorul principal HIDS.
-Layout: sidebar fix la stanga + continut la dreapta.
-Sidebar contine: titlu, toggle Live/Pasiv, meniu sectiuni, statusuri ML.
-"""
 import json
 import time
 import dash
@@ -13,15 +8,14 @@ from dash.exceptions import PreventUpdate
 from dashboard_utils import (
     get_ip_gazda, DARK, CARD, TEXT, MUTED, BORDER, ACCENT, DARK2,
 )
-from dashboard_trafic      import SecțiuneTrafic
-from dashboard_statistici  import SecțiuneStatistici
-from dashboard_alerte      import SecțiuneAlerte
-from dashboard_comunicatii import SecțiuneComunicatii
-from dashboard_setari      import SecțiuneSetari
-from dashboard_pasiv       import SecțiunePasiva
+from dashboard_trafic      import SectiuneTrafic
+from dashboard_statistici  import SectiuneStatistici
+from dashboard_alerte      import SectiuneAlerte
+from dashboard_comunicatii import SectiuneComunicatii
+from dashboard_setari      import SectiuneSetari
+from dashboard_pasiv       import SectiunePasiva
 
 
-# ─── Constante sidebar ────────────────────────────────────────────────────────
 SIDEBAR_W   = "236px"
 SIDEBAR_BG  = "#0c1222"
 FONT_UI = "'DM Sans', 'Inter', system-ui, sans-serif"
@@ -115,17 +109,15 @@ class DashboardRetea:
         self.ip_gazda = get_ip_gazda()
         print(f"[DASHBOARD] IP gazda detectat: {self.ip_gazda}")
 
-        self._trafic     = SecțiuneTrafic(app_state,     self.ip_gazda, "lt")
-        self._statistici = SecțiuneStatistici(app_state, self.ip_gazda, "lst")
-        self._alerte     = SecțiuneAlerte(app_state,     "la")
-        self._comun      = SecțiuneComunicatii(app_state, self.ip_gazda, "lc")
-        self._setari     = SecțiuneSetari(app_state,     "ls")
-        self._pasiv      = SecțiunePasiva(app_state)
+        self._trafic     = SectiuneTrafic(app_state,     self.ip_gazda, "lt")
+        self._statistici = SectiuneStatistici(app_state, self.ip_gazda, "lst")
+        self._alerte     = SectiuneAlerte(app_state,     "la")
+        self._comun      = SectiuneComunicatii(app_state, self.ip_gazda, "lc")
+        self._setari     = SectiuneSetari(app_state,     "ls")
+        self._pasiv      = SectiunePasiva(app_state)
 
         self._build_layout()
         self._register_callbacks()
-
-    # ── Layout ────────────────────────────────────────────────────────────────
 
     def _sidebar(self):
         return html.Div([
@@ -134,7 +126,7 @@ class DashboardRetea:
                 html.Div("HIDS", style={
                     "fontSize": "24px", "fontWeight": "800",
                     "color": TEXT, "lineHeight": "1", "letterSpacing": "-0.03em"}),
-                html.Div("Monitor rețea & intruziuni",
+                html.Div("Monitor retea & intruziuni",
                          style={"fontSize": "11px", "color": MUTED,
                                 "marginTop": "5px", "fontWeight": "500"}),
             ], style={
@@ -149,7 +141,7 @@ class DashboardRetea:
                             "borderBottom": f"1px solid {BORDER}"}),
 
             html.Div([
-                html.P("Sursă date", style={
+                html.P("Sursâ date", style={
                     "fontSize": "10px", "color": MUTED, "margin": "0 0 8px 2px",
                     "fontWeight": "700", "textTransform": "uppercase",
                     "letterSpacing": "0.1em"}),
@@ -191,7 +183,7 @@ class DashboardRetea:
                 ], style={"display": "flex", "justifyContent": "space-between",
                           "alignItems": "center", "marginBottom": "8px", "gap": "8px"}),
                 html.Div([
-                    html.Span("Detecție",
+                    html.Span("Detectie",
                               style={"fontSize": "11px", "color": MUTED,
                                      "fontWeight": "500", "minWidth": "72px"}),
                     html.Span(id="g-badge-detectie"),
@@ -227,7 +219,6 @@ class DashboardRetea:
                                "zIndex": "200", "display": "none"}),
             self._sidebar(),
 
-            # Zona continut — Live și Pasiv montate separat (Pasiv nu se pierde la comutare)
             html.Div([
                 html.Div(
                     id="live-tab-content",
@@ -272,11 +263,9 @@ class DashboardRetea:
             "-webkitFontSmoothing": "antialiased",
         })
 
-    # ── Callbacks ─────────────────────────────────────────────────────────────
 
     def _register_callbacks(self):
 
-        # Click nav item
         @self.app.callback(
             Output("nav-sectiune",  "data"),
             Output("alerte-last-ts", "data"),
@@ -291,11 +280,9 @@ class DashboardRetea:
                 raise PreventUpdate
             info = json.loads(ctx.triggered[0]["prop_id"].split(".")[0])
             sectiune = info["index"]
-            # Daca utilizatorul intra pe Alerte, reseteaza timestamp-ul
             nou_ts = time.time() if sectiune == "alerte" else last_ts
             return sectiune, nou_ts
 
-        # Click mode btn
         @self.app.callback(
             Output("nav-mod", "data"),
             Input({"type": "mode-btn", "index": dash.dependencies.ALL},
@@ -328,7 +315,6 @@ class DashboardRetea:
                 return "sidebar-open", "content-with-sidebar"
             return "sidebar-closed", "content-full"
 
-        # Render meniu sidebar
         @self.app.callback(
             Output("nav-container",  "children"),
             Output("mode-container", "children"),
@@ -338,7 +324,6 @@ class DashboardRetea:
             State("alerte-last-ts", "data"),
         )
         def render_nav(sectiune, mod, _, last_ts):
-            # Numaram alertele noi de cand s-a vizitat ultima oara Alerte
             alerte_noi = 0
             if sectiune != "alerte":
                 try:
@@ -356,7 +341,6 @@ class DashboardRetea:
                 items = []
                 for val, label in SECTIUNI_LIVE:
                     item = _nav_item(label, val, val == sectiune)
-                    # Badge alerte noi
                     if val == "alerte" and alerte_noi > 0:
                         item = html.Div([
                             item,
@@ -388,7 +372,6 @@ class DashboardRetea:
                     "fontSize": "12px", "fontStyle": "italic"})]
             return items, mode_btns
 
-        # Continut Live (Pasiv ramane in pasiv-tab-content)
         @self.app.callback(
             Output("live-tab-content", "children"),
             Input("nav-sectiune", "data"),
@@ -433,7 +416,6 @@ class DashboardRetea:
                 self.state.enter_pasiv_mode()
             return mod or "live"
 
-        # Interfete active
         @self.app.callback(
             Output("g-interfete", "children"),
             Input("g-interval", "n_intervals"),
@@ -442,7 +424,7 @@ class DashboardRetea:
             interfete = self.state.interfete_active
             if not interfete:
                 return html.Div([
-                    html.P("Interfețe captură", style={
+                    html.P("Interfete capturâ", style={
                         "fontSize": "10px", "color": MUTED, "margin": "0 0 10px 0",
                         "fontWeight": "700", "textTransform": "uppercase",
                         "letterSpacing": "0.1em"}),
@@ -463,7 +445,7 @@ class DashboardRetea:
             items = []
             for iface in interfete:
                 tag, stripe = tip_meta.get(
-                    iface.get("tip", "fizica"), ("Rețea", "#64748b"))
+                    iface.get("tip", "fizica"), ("Retea", "#64748b"))
                 nume    = iface.get("name") or "—"
                 ip_addr = iface.get("ip") or "—"
                 items.append(html.Div([
@@ -507,7 +489,7 @@ class DashboardRetea:
                 }))
 
             return html.Div([
-                html.P("Interfețe captură",
+                html.P("Interfete capturâ",
                        style={
                            "fontSize": "10px", "color": MUTED,
                            "fontWeight": "700", "margin": "0 0 10px 4px",
@@ -516,7 +498,6 @@ class DashboardRetea:
                 *items,
             ])
 
-        # Statusuri ML
         @self.app.callback(
             Output("g-badge-antrenare", "children"),
             Output("g-badge-antrenare", "style"),
@@ -550,7 +531,6 @@ class DashboardRetea:
 
             return a_txt, badge_a, d_txt, badge_d
 
-        # Callbacks sectiuni
         for sectiune in [self._trafic, self._statistici, self._alerte,
                           self._comun, self._setari]:
             sectiune.register_callbacks(self.app)

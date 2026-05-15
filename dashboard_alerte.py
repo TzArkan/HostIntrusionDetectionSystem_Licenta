@@ -1,8 +1,3 @@
-"""
-dashboard_alerte.py - Sectiunea Alerte.
-Carduri compacte cu fundalul colorat in nuanta severității.
-TP confirmate → fundal verde, FP confirmate → fundal rosu-gri.
-"""
 import json
 import time
 from datetime import datetime
@@ -20,7 +15,6 @@ from dashboard_utils import (
 )
 
 
-# ─── Culori bazate pe severitate (stare neconfirmata) ────────────────────────
 SEV_BG = {
     "SCAZUTA": "#86efac18",
     "MEDIE":   "#fde68a18",
@@ -30,32 +24,29 @@ SEV_BG = {
 SEV_BORDER = SEV_CULORI
 
 TIP_CULORI = {
-    "DDoS SYN Flood":         "#a78bfa",   # violet
-    "DoS SYN Flood":          "#c084fc",   # violet deschis
-    "Port Scan":         "#fb923c",   # portocaliu
-    "Brute Force":       "#f87171",   # rosu
-    "ICMP Flood":        "#fde68a",   # galben
-    "DNS Amplification": "#f9a8d4",   # roz
-    "Data Exfiltration": "#ff6b6b",   # rosu intens
-    "Anomalie ML":       "#67e8f9",   # cyan
-    # FIM
+    "DDoS SYN Flood":         "#a78bfa",   
+    "DoS SYN Flood":          "#c084fc",  
+    "Port Scan":         "#fb923c",   
+    "Brute Force":       "#f87171",  
+    "ICMP Flood":        "#fde68a",  
+    "DNS Amplification": "#f9a8d4", 
+    "Data Exfiltration": "#ff6b6b",
+    "Anomalie ML":       "#67e8f9",
     "FIM - FISIER MODIFICAT":      "#fb923c",
     "FIM - FISIER STERS sau MUTAT":"#f87171",
 }
 
 
 def _culoare_alerta(tip_atac: str, severitate: str) -> str:
-    """Returneaza culoarea pentru o alerta: tip_atac are prioritate fata de severitate."""
     return TIP_CULORI.get(tip_atac, SEV_CULORI.get(severitate, MUTED))
 
-# ─── Culori pentru stare confirmata ─────────────────────────────────────────
-TP_BG     = "#052e16"       # verde inchis solid
-TP_BORDER = "#16a34a"       # verde mediu
-FP_BG     = "#1c1117"       # mov-rosu inchis (rosu gri)
-FP_BORDER = "#6b4050"       # rosu-gri desat
+TP_BG     = "#052e16"       
+TP_BORDER = "#16a34a"       
+FP_BG     = "#1c1117"     
+FP_BORDER = "#6b4050" 
 
 
-class SecțiuneAlerte:
+class SectiuneAlerte:
     DD_STYLE = {"backgroundColor": CARD, "color": DARK, "fontSize": "12px"}
 
     INTERVAL_OPTS = [
@@ -80,8 +71,8 @@ class SecțiuneAlerte:
         p = self.P
         scan_pasiv = html.Div([
             html.P(
-                "Rulează detectorii built-in și regulile custom din baza live "
-                "pe pachetele din captura încărcată (moment de referință = sfârșitul capturii).",
+                "Ruleaza detectorii built-in si regulile custom din baza live "
+                "pe pachetele din captura incarcata (moment de referinta = sfarsitul capturii).",
                 style={"fontSize": "12px", "color": MUTED,
                        "margin": "0 0 12px 0", "lineHeight": "1.5"},
             ),
@@ -93,7 +84,7 @@ class SecțiuneAlerte:
                 style={"minHeight": "48px"},
                 children=html.Div([
                     html.Button(
-                        "🔍 Scan reguli pe captură",
+                        "🔍 Scan reguli pe captura",
                         id="p-scan-db-btn",
                         n_clicks=0,
                         style={
@@ -122,7 +113,6 @@ class SecțiuneAlerte:
 
         return html.Div([
             scan_pasiv,
-            # ── Filtre ───────────────────────────────────────────────────────
             card([
                 html.Div([
                     html.Div([html.Label("Interval:", style=lbl()),
@@ -206,7 +196,6 @@ class SecțiuneAlerte:
                           "flexWrap": "wrap", "alignItems": "flex-end"}),
             ], {"padding": "10px 14px", "marginBottom": "10px"}),
 
-            # ── Lista carduri ─────────────────────────────────────────────────
             html.Div(id=f"{p}-container",
                      style={"maxHeight": "680px", "overflowY": "auto",
                             "paddingRight": "2px"}),
@@ -309,13 +298,11 @@ class SecțiuneAlerte:
         @app.callback(
             Output(f"{p}-container", "children"),
             Output(f"{p}-count",     "children"),
-            # Declanșatori (Input)
             Input(f"{p}-interval",    "n_intervals"),
             Input(f"{p}-search-btn",  "n_clicks"),
             Input(f"{p}-tp-fp-store", "data"),
             Input(f"{p}-seen-store",  "data"),
             Input("pa-scan-tick",     "data"),
-            # Citire pasivă (State)
             State(f"{p}-open-id",     "data"),
             State(f"{p}-f-interval",  "value"),
             State(f"{p}-f-status",    "value"),
@@ -360,21 +347,19 @@ class SecțiuneAlerte:
                 ora       = datetime.fromtimestamp(
                                 a["timestamp"]).strftime("%d.%m %H:%M:%S")
 
-                # ── Stilul cardului depinde de starea de confirmare ───────────
-                if confirmat == 1:          # True Positive → verde
+                if confirmat == 1:          
                     bg_card     = TP_BG
                     border_left = TP_BORDER
                     border_rest = f"1px solid {TP_BORDER}55"
-                elif confirmat == 0:        # False Positive → rosu-gri
+                elif confirmat == 0:       
                     bg_card     = FP_BG
                     border_left = FP_BORDER
                     border_rest = f"1px solid {FP_BORDER}55"
-                else:                       # Neconfirmat → culoare severitate
+                else: 
                     bg_card     = SEV_BG.get(sev, "#ffffff08")
                     border_left = culoare
                     border_rest = f"1px solid {culoare}30"
 
-                # ── Badge stare clasificare ───────────────────────────────────
                 if confirmat == 1:
                     stare_el = html.Span("✓ TP", style={
                         "color": "#86efac", "fontSize": "11px",
@@ -412,7 +397,7 @@ class SecțiuneAlerte:
 
                 badge_vazuta = (
                     html.Span(
-                        "Văzută",
+                        "Vazuta",
                         style={
                             "fontSize": "9px",
                             "color": "#64748b",
@@ -454,7 +439,7 @@ class SecțiuneAlerte:
                                           "whiteSpace": "nowrap"}),
                     dcc.Checklist(
                         id={"type": f"{p}-chk-seen", "index": a["id"]},
-                        options=[{"label": "Văzut", "value": "seen"}],
+                        options=[{"label": "Vazut", "value": "seen"}],
                         value=["seen"] if vazuta else [],
                         style={"color": TEXT, "fontSize": "11px",
                                "marginRight": "8px"},
@@ -483,7 +468,6 @@ class SecțiuneAlerte:
                 ])
 
                 carduri.append(html.Div([
-                    # ── Rand principal ────────────────────────────────────────
                     html.Div([
                         html.Div([
                             html.Span(a["tip_atac"],
@@ -555,7 +539,6 @@ class SecțiuneAlerte:
         culoare = _culoare_alerta(a.get("tip_atac", ""), sev)
         confirmat = a.get("confirmat")
 
-        # Culoarea borderii detalii corespunde starii cardului
         if confirmat == 1:
             separator_color = TP_BORDER
         elif confirmat == 0:
@@ -711,7 +694,7 @@ class SecțiuneAlerte:
         ]
         status = "partial" if any(parts) else "none"
         status_color = "#fde68a" if status == "partial" else "#94a3b8"
-        status_text = "context îmbogățit parțial" if status == "partial" else "context indisponibil"
+        status_text = "context imbogatit partial" if status == "partial" else "context indisponibil"
 
         return html.Div([
             html.Span("Context", style={"color": ACCENT, "fontWeight": "700",

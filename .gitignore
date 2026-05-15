@@ -1,4 +1,4 @@
-# Baze de date SQLite si jurnale WAL
+# Baze de date SQLite si jurnale WAL, si documentatie
 *.db
 *.db-wal
 *.db-shm

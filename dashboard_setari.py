@@ -1,12 +1,3 @@
-"""
-dashboard_setari.py - Sectiunea Setari:
-  1. Parametrii detectori built-in cu nume sugestive si descrieri
-  2. Model Anomalii ML:
-       - Sub-card Antrenare: butoane cu stare dinamica (porneste/opreste/sterge)
-       - Sub-card Detectie: toggle activare/dezactivare anomalii ML
-  3. Reguli custom (adaugare, editare, stergere)
-  4. FIM: cai suplimentare persistente in SQLite (langa regulile custom)
-"""
 import json
 import os
 
@@ -22,7 +13,6 @@ from dashboard_utils import (
 from validators import validate_port, validate_tcp_flags, validate_rule_name
 
 
-# ─── Metadata detectori ───────────────────────────────────────────────────────
 DETECTORI_META = {
     "Port Scan": {
         "descriere": (
@@ -72,17 +62,17 @@ DETECTORI_META = {
     },
     "Data Exfiltration": {
         "descriere": (
-            "Beaconing către un IP exterior: volum mare + multe octeți și un ritm între pachete lent în mediu "
-            "și foarte regulat (nu rafală de browser/CDN). Prag_med_min filtrează fluxurile cu interval mediu "
-            "aproape zero. Alertă dacă deviația intervalelor (std) e sub prag_std — prag_std mic ⇒ doar ritm "
+            "Beaconing catre un IP exterior: volum mare + multe octeti si un ritm intre pachete lent in mediu "
+            "si foarte regulat (nu rafala de browser/CDN). Prag_med_min filtreaza fluxurile cu interval mediu "
+            "aproape zero. Alerta daca deviatia intervalelor (std) e sub prag_std — prag_std mic ⇒ doar ritm "
             "aproape perfect periodic."
         ),
         "params": {
             "prag_pachete": "Minim pachete spre acel IP (implicit foarte mare)",
-            "prag_std": ("Deviație std a gap-urilor (s); alertă doar dacă std < prag "
+            "prag_std": ("Deviatie std a gap-urilor (s); alerta doar daca std < prag "
                          "(mai mic ⇒ doar puls extrem de regulat)"),
-            "prag_bytes":   "Bytes minim către IP în fereastră (~8 MiB implicit)",
-            "prag_med_min": "Interval mediu min. între pachete către tintă (s); sub → ignoră (rafală)",
+            "prag_bytes":   "Bytes minim catre IP in fereastra (~8 MiB implicit)",
+            "prag_med_min": "Interval mediu min. intre pachete catre tinta (s); sub → ignora (rafala)",
             "fereastra":    "Fereastra de timp (secunde)",
         },
     },
@@ -110,14 +100,8 @@ DETECTORI_META = {
 }
 
 
-# ─── Helper-e butoane ML ─────────────────────────────────────────────────────
-
 def _btn_ml(label: str, bg: str, fg: str,
             enabled: bool, btn_id: dict, extra: dict = None) -> html.Button:
-    """
-    Buton ML cu stare activ/inactiv.
-    Cand disabled=True aplica stilul gri si cursor not-allowed.
-    """
     if enabled:
         stil = {
             "background": bg, "color": fg, "border": "none",
@@ -139,7 +123,6 @@ def _btn_ml(label: str, bg: str, fg: str,
 
 
 def _subcard(continut, accent_color: str = ACCENT):
-    """Sub-card cu border stanga colorat."""
     return html.Div(continut, style={
         "backgroundColor": f"{accent_color}08",
         "border": f"1px solid {accent_color}22",
@@ -150,27 +133,21 @@ def _subcard(continut, accent_color: str = ACCENT):
     })
 
 
-# ─── Sectiunea Setari ────────────────────────────────────────────────────────
-
-class SecțiuneSetari:
+class SectiuneSetari:
     DD_STYLE = {"backgroundColor": DARK, "color": TEXT, "fontSize": "13px"}
 
     def __init__(self, app_state, prefix: str = "ls"):
         self.state = app_state
         self.P     = prefix
 
-    # ── Layout ───────────────────────────────────────────────────────────────
-
     def layout(self):
         p = self.P
         return html.Div([
 
-            # ══ A) MODEL ANOMALII ML ══════════════════════════════════════════
             html.H3("Model Anomalii ML",
                     style={"color": TEXT, "fontSize": "15px",
                            "marginBottom": "10px"}),
             card([
-                # ── Sub-card 1: Antrenare ─────────────────────────────────────
                 _subcard([
                     html.Div([
                         html.Span("Antrenare model",
@@ -187,7 +164,6 @@ class SecțiuneSetari:
                         style={"color": MUTED, "fontSize": "12px",
                                "margin": "0 0 14px 0", "lineHeight": "1.6"}),
 
-                    # Sursa date
                     html.Div([
                         html.Label("Sursa date antrenare:", style=lbl()),
                         dcc.RadioItems(
@@ -204,7 +180,6 @@ class SecțiuneSetari:
                             style={"display": "flex", "flexWrap": "wrap"}),
                     ], style={"marginBottom": "10px"}),
 
-                    # Selector fisier extern (ascuns cand sursa=live)
                     html.Div(id=f"{p}-ml-extern-row", children=[
                         html.Div([
                             html.Div(id=f"{p}-ml-extern-cale",
@@ -226,7 +201,6 @@ class SecțiuneSetari:
                         dcc.Store(id=f"{p}-ml-extern-store"),
                     ], style={"display": "none"}),
 
-                    # Ore de date
                     html.Div([
                         html.Label("Date de antrenare (ore):", style=lbl()),
                         dcc.Input(id=f"{p}-ml-ore", type="number",
@@ -236,7 +210,6 @@ class SecțiuneSetari:
                                              "padding": "4px 8px"})),
                     ], style={"marginBottom": "14px"}),
 
-                    # Butoane actiune
                     html.Div(id=f"{p}-ml-btns",
                              style={"display": "flex", "gap": "10px",
                                     "flexWrap": "wrap"}),
@@ -246,7 +219,6 @@ class SecțiuneSetari:
                                     "color": "#86efac"}),
                 ], accent_color=ACCENT),
 
-                # ── Sub-card 2: Detectie activa/inactiva ─────────────────────
                 _subcard([
                     html.Span("Detectie anomalii ML",
                               style={"color": "#7dd3fc", "fontWeight": "700",
@@ -267,7 +239,6 @@ class SecțiuneSetari:
 
             html.Div(style={"height": "8px"}),
 
-            # ══ B) PARAMETRII DETECTORI BUILT-IN ═════════════════════════════
             html.H3("Parametrii detectori",
                     style={"color": TEXT, "fontSize": "15px",
                            "marginBottom": "12px", "marginTop": "4px"}),
@@ -285,7 +256,6 @@ class SecțiuneSetari:
 
             html.Div(style={"height": "8px"}),
 
-            # ══ C) REGULI CUSTOM ══════════════════════════════════════════════
             html.H3("Reguli de detectie custom",
                     style={"color": TEXT, "fontSize": "15px",
                            "marginBottom": "10px", "marginTop": "4px"}),
@@ -337,16 +307,15 @@ class SecțiuneSetari:
 
             html.Div(style={"height": "14px"}),
 
-            # ══ D) FIM — căi monitorizate (persistente) ═══════════════════════
-            html.H3("Monitorizare integritate fișiere (FIM)",
+            html.H3("Monitorizare integritate fisiere (FIM)",
                     style={"color": TEXT, "fontSize": "15px",
                            "marginBottom": "10px", "marginTop": "4px"}),
             card([
-                sectiune_titlu("Căi suplimentare"),
+                sectiune_titlu("Cai suplimentare"),
                 html.P(
-                    "Pe lângă fișierele implicite (ex. hosts), poți adăuga căi "
-                    "complete către fișiere monitorizate. Modificările față de "
-                    "baseline generează alerte FIM. Listă salvată în baza SQLite.",
+                    "Pe langa fisierele implicite (ex. hosts), poti adauga cai "
+                    "complete catre fisiere monitorizate. Modificarile fata de "
+                    "baseline genereaza alerte FIM. Lista salvata in baza SQLite.",
                     style={"color": MUTED, "fontSize": "12px",
                            "margin": "0 0 12px 0", "lineHeight": "1.6"}),
                 html.Div([
@@ -357,7 +326,7 @@ class SecțiuneSetari:
                         style=inp({"flex": "1", "minWidth": "260px",
                                    "fontSize": "12px"})),
                     html.Button(
-                        "+ Adaugă la monitorizare",
+                        "+ Adauga la monitorizare",
                         id=f"{p}-fim-add",
                         n_clicks=0,
                         style=btn("#166534", "white")),
@@ -371,7 +340,6 @@ class SecțiuneSetari:
                 html.Div(id=f"{p}-fim-lista"),
             ]),
 
-            # Stores & Intervals
             dcc.Store(id=f"{p}-edit-id",      data=None),
             dcc.Store(id=f"{p}-save-store",   data=0),
             dcc.Store(id=f"{p}-ml-act-store", data=0),
@@ -380,12 +348,10 @@ class SecțiuneSetari:
             dcc.Interval(id=f"{p}-ml-interval", interval=2000, n_intervals=0),
         ])
 
-    # ── Callbacks ────────────────────────────────────────────────────────────
 
     def register_callbacks(self, app):
         p = self.P
 
-        # ── A) Parametrii detectori ───────────────────────────────────────────
 
         @app.callback(
             Output(f"{p}-detectori-lista", "children"),
@@ -483,8 +449,6 @@ class SecțiuneSetari:
                 print(f"[SETARI] Eroare salvare config: {e}")
             return (counter or 0) + 1
 
-        # ── B) ML – arata/ascunde row-ul extern ──────────────────────────────
-
         @app.callback(
             Output(f"{p}-ml-extern-row", "style"),
             Input(f"{p}-ml-sursa", "value"),
@@ -493,7 +457,6 @@ class SecțiuneSetari:
             return {"display": "block"} if sursa == "extern" \
                    else {"display": "none"}
 
-        # ── B) ML – browse fisier extern ─────────────────────────────────────
 
         @app.callback(
             Output(f"{p}-ml-extern-store", "data"),
@@ -518,7 +481,6 @@ class SecțiuneSetari:
             except Exception as e:
                 return None, f"Eroare: {e}"
 
-        # ── B) ML – butoane cu stare dinamica ─────────────────────────────────
 
         @app.callback(
             Output(f"{p}-ml-btns",         "children"),
@@ -531,7 +493,6 @@ class SecțiuneSetari:
             status           = self.state.ml_status
             date_ok, date_msg = self.state.are_date_suficiente_ml()
 
-            # Badge status
             STATUS_MAP = {
                 "ready":    ("● Niciun model",    "#475569", "#1e293b"),
                 "training": ("⟳ Antrenare...",   "#fde68a", "#422006"),
@@ -558,7 +519,7 @@ class SecțiuneSetari:
 
             elif status == "trained":
                 btn_porneste = _btn_ml(
-                    "↻ Reantrenează", "#166534", "white",
+                    "↻ Reantreneaza", "#166534", "white",
                     enabled=date_ok, btn_id=f"{p}-ml-btn-porneste")
                 btn_opreste  = _btn_ml(
                     "■ Opreste antrenarea", "#7f1d1d", "#fca5a5",
@@ -567,7 +528,7 @@ class SecțiuneSetari:
                     "🗑 Sterge model", "#7f1d1d", "#fca5a5",
                     enabled=True,  btn_id=f"{p}-ml-btn-sterge")
 
-            else:  # "ready"
+            else: 
                 btn_porneste = _btn_ml(
                     "▶ Porneste antrenarea", "#166534", "white",
                     enabled=date_ok, btn_id=f"{p}-ml-btn-porneste")
@@ -578,7 +539,6 @@ class SecțiuneSetari:
                     "🗑 Sterge model", "#7f1d1d", "#fca5a5",
                     enabled=False, btn_id=f"{p}-ml-btn-sterge")
 
-            # Mesaj despre disponibilitatea datelor
             culoare_msg = "#86efac" if date_ok else "#fde68a"
             info_date   = html.Span(
                 date_msg,
@@ -587,7 +547,6 @@ class SecțiuneSetari:
 
             return [btn_porneste, btn_opreste, btn_sterge, info_date], txt, badge_style
 
-        # ── B) ML – actiuni butoane ────────────────────────────────────────────
 
         @app.callback(
             Output(f"{p}-ml-act-store", "data"),
@@ -630,7 +589,6 @@ class SecțiuneSetari:
 
             return (counter or 0) + 1, msg
 
-        # ── Actualizeaza mesajul dupa ce thread-ul de antrenare termina ───────
         @app.callback(
             Output(f"{p}-ml-msg", "children", allow_duplicate=True),
             Input(f"{p}-ml-interval", "n_intervals"),
@@ -639,7 +597,6 @@ class SecțiuneSetari:
         def sync_ml_msg(_):
             return self.state.ml_msg
 
-        # ── B) ML – toggle detectie ────────────────────────────────────────────
 
         @app.callback(
             Output(f"{p}-det-toggle-area", "children"),
@@ -665,7 +622,6 @@ class SecțiuneSetari:
                 btn_bg, btn_fg = "#166534", "white"
                 btn_enabled = True
             else:
-                # Niciun model antrenat — buton dezactivat
                 culoare_txt = "#475569"
                 bg_stare    = "#1e293b"
                 txt_stare   = "○ INACTIVA"
@@ -721,7 +677,6 @@ class SecțiuneSetari:
             self.state.toggle_detectie_ml()
             return (counter or 0) + 1
 
-        # ── C) Reguli custom ──────────────────────────────────────────────────
 
         @app.callback(
             Output(f"{p}-r-add-status", "children"),
@@ -1027,7 +982,6 @@ class SecțiuneSetari:
                 elemente.append(rand)
             return elemente
 
-        # ── D) FIM — căi persistente ───────────────────────────────────────────
 
         @app.callback(
             Output(f"{p}-fim-msg", "children"),
@@ -1039,16 +993,16 @@ class SecțiuneSetari:
         )
         def fim_adauga(_, cale, ctr):
             if not cale or not str(cale).strip():
-                return "Introduceți o cale completă către fișier.", ctr or 0
+                return "Introduceti o cale completa catre fisier.", ctr or 0
             cale_n = os.path.normpath(str(cale).strip())
             ok = self.state.db_live.inserare_fim_cale_user(cale_n)
             if not ok:
-                return ("Cale deja în listă sau nu s-a putut salva "
-                        "(bază read-only)."), ctr or 0
+                return ("Cale deja in lista sau nu s-a putut salva "
+                        "(baza read-only)."), ctr or 0
             fm = getattr(self.state, "fim_monitor", None)
             if fm:
                 fm.adauga_fisier(cale_n)
-            return f"✓ Adăugat la monitorizare: {cale_n}", (ctr or 0) + 1
+            return f"✓ Adaugat la monitorizare: {cale_n}", (ctr or 0) + 1
 
         @app.callback(
             Output(f"{p}-fim-store", "data", allow_duplicate=True),
@@ -1087,8 +1041,8 @@ class SecțiuneSetari:
             rows = self.state.db_live.get_fim_cai_user()
             if not rows:
                 return html.P(
-                    "Nicio cale suplimentară. Fișierele implicite "
-                    "(hosts, services, …) rămân activate din cod.",
+                    "Nicio cale suplimentara. Fisierele implicite "
+                    "(hosts, services, …) raman activate din cod.",
                     style={"color": MUTED, "padding": "8px 0",
                            "fontSize": "12px"})
 
@@ -1103,7 +1057,7 @@ class SecțiuneSetari:
                         "wordBreak": "break-all",
                     }),
                     html.Button(
-                        "Șterge",
+                        "sterge",
                         id={"type": f"{p}-fim-del", "index": r["id"]},
                         n_clicks=0,
                         style=btn("#4c1d1d", "#fca5a5",

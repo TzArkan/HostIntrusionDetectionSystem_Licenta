@@ -5,14 +5,12 @@ sudo hping3 -S -c 500 -i u10000 -p 80 192.168.56.1
 
 sudo nmap -sS 192.168.56.1 -p 1-1000 --min-rate 200
 """
-"""detector.py - Detectia atacurilor cunoscute (rule-based)"""
 import time, threading
 from backup import DestinatiBackup, BackupNoop
 from enrichment import EnrichmentService
 
 
 class DetectorAtac:
-    """Clasa abstracta de baza. Subclasele suprascriu analizeaza()."""
     NUME = "Generic"; SEVERITATE = "MEDIE"
     _SUPRESIE_GLOBALA = {}
     _LOCK_SUPRESIE = threading.Lock()
@@ -21,16 +19,12 @@ class DetectorAtac:
         self.db       = db
         self.backup   = backup or BackupNoop()
         self.sursa    = sursa
-        self.ip_gazda = ip_gazda   # exclus din toate query-urile de detectie
+        self.ip_gazda = ip_gazda   
         self.enrichment = enrichment
-        # Pentru analiza offline: moment de referinta (ex. MAX(timestamp) din captura)
         self._reference_time = None
-        
-        # DICTIONAR NOU PENTRU COOLDOWN ALERTE
         self._ultimele_alerte = {} 
 
     def set_reference_time(self, ts):
-        """Fixeaza „acum” pentru ferestre SQL (scan pasiv pe capturi vechi)."""
         self._reference_time = float(ts) if ts is not None else None
 
     def _now(self):
@@ -95,28 +89,21 @@ class DetectorAtac:
         return self._now() - f
 
     def _excl(self):
-        """Returneaza conditia SQL si parametrii pentru excluderea IP-ului gazda."""
         if self.ip_gazda:
-            return (
-                "AND src_ip != ? AND dst_ip != ?",
-                [self.ip_gazda, self.ip_gazda],
-            )
+            return ("AND src_ip != ? AND dst_ip != ?", [self.ip_gazda, self.ip_gazda],)
         return ("", [])
 
     def _excl_src(self):
-        """Exclude doar ca sursa (ex: scanare initiata de gazda)."""
         if self.ip_gazda:
             return "AND src_ip != ?", [self.ip_gazda]
         return "", []
 
     def _excl_dst(self):
-        """Exclude doar ca destinatie."""
         if self.ip_gazda:
             return "AND dst_ip != ?", [self.ip_gazda]
         return "", []
 
-    def _completeaza_ip_uri(self, src_ip=None, dst_ip=None,
-                            src_port=None, dst_port=None, protocol=None):
+    def _completeaza_ip_uri(self, src_ip=None, dst_ip=None, src_port=None, dst_port=None, protocol=None):
         if src_ip and dst_ip:
             return src_ip, dst_ip
         try:
@@ -154,14 +141,13 @@ sudo nmap -sS 192.168.56.1 -p 1-1000 --min-rate 200
 sudo nmap -sS 192.168.1.129 -p 1-1000 --min-rate 200
 '''
 class DetectorPortScan(DetectorAtac):
-    """1 IP sursa (extern) -> >prag porturi distincte cu SYN in fereastra."""
     NUME = "Port Scan"; SEVERITATE = "RIDICATA"
 
     def analizeaza(self, fereastra_secunde=60):
         prag = int(self.db.get_config_detector("Port Scan", "prag", 20))
         fw   = int(self.db.get_config_detector("Port Scan", "fereastra", 60))
 
-        excl_sql, excl_p = self._excl()
+        excl_sql, excl_p = self._excl_src()
         cur = self.db._get_conexiune().cursor()
         cur.execute(f"""
             SELECT src_ip, dst_ip, COUNT(DISTINCT dst_port) AS p
@@ -183,12 +169,11 @@ class DetectorPortScan(DetectorAtac):
         cur.close()
 
 '''
-# 1000 pachete, câte unul la 10ms — suficient pentru a declanșa alerta (prag 100/60s)
+# 1000 pachete, cate unul la 10ms — suficient pentru a declansa alerta (prag 100/60s)
 sudo hping3 -S -c 500 -i u10000 -p 80 192.168.56.1
-u10000 = 10.000 microsecunde = 10ms între pachete. 1000 pachete în ~10 secunde — declanșează alerta fără să blochezi calculatorul.
+u10000 = 10.000 microsecunde = 10ms intre pachete. 1000 pachete in ~10 secunde — declanseaza alerta fara sa blochezi calculatorul.
 '''
 class DetectorSYNFlood(DetectorAtac):
-    """N surse externe -> acelasi IP:port, volum mare SYN (DDoS)."""
     NUME = "SYN Flood"; SEVERITATE = "CRITICA"
 
     def analizeaza(self, fereastra_secunde=10):
@@ -202,7 +187,6 @@ class DetectorSYNFlood(DetectorAtac):
         excl_sql, excl_p = self._excl_src()
         cur = self.db._get_conexiune().cursor()
 
-        # AM ADĂUGAT GROUP_CONCAT PENTRU A COLECTA IP-URILE
         cur.execute(f"""
             SELECT dst_ip, dst_port,
                    COUNT(*) AS s,
@@ -222,11 +206,10 @@ class DetectorSYNFlood(DetectorAtac):
         for r in rezultate:
             if r["u"] >= prag_surse and r["s"] >= prag_syn_ddos:
                 
-                # PARSAM LISTA DE IP-URI ȘI O TRUNCHIEM DACA E PREA LUNGĂ
                 ip_list = r["lista_ip"].split(",") if r["lista_ip"] else []
                 ip_preview = ", ".join(ip_list[:10])
                 if len(ip_list) > 10:
-                    ip_preview += f" (+ încă {len(ip_list) - 10} IP-uri)"
+                    ip_preview += f" (+ inca {len(ip_list) - 10} IP-uri)"
                 
                 detalii = (f"{r['s']} pachete SYN catre portul {r['dst_port']} "
                            f"de la {r['u']} surse in {fw_ddos}s. "
@@ -257,7 +240,6 @@ for i in $(seq 1 20); do sshpass -p "wrong$i" ssh -o StrictHostKeyChecking=no ad
 hydra -l administrator -P /usr/share/wordlists/rockyou.txt ssh://192.168.56.1
 '''
 class DetectorBruteForce(DetectorAtac):
-    """IP extern, >prag conexiuni/min la SSH/RDP/FTP/Telnet."""
     NUME = "Brute Force"; SEVERITATE = "RIDICATA"
     PORTURI = {"22": "SSH", "3389": "RDP", "21": "FTP", "23": "Telnet"}
 
@@ -268,7 +250,6 @@ class DetectorBruteForce(DetectorAtac):
         porturi = list(self.PORTURI.keys())
         ph      = ",".join("?" * len(porturi))
 
-        # Excludem gazda ca sursa (brute force vine din exterior)
         excl_sql, excl_p = self._excl_src()
         cur = self.db._get_conexiune().cursor()
         cur.execute(f"""
@@ -308,7 +289,6 @@ class DetectorDNSAmplification(DetectorAtac):
         fw         = int(self.db.get_config_detector(
             "DNS Amplification", "fereastra",    60))
 
-        # Excludem gazda din ambele directii
         excl_sql, excl_p = self._excl_src()
         cur = self.db._get_conexiune().cursor()
         cur.execute(f"""
@@ -340,30 +320,23 @@ for i in $(seq 1 30); do
 done
 '''
 class DetectorExfiltrare(DetectorAtac):
-    """
-    Beaconing: multe pachete spre același IP extern, volum mare și intervale între pachete
-    relativ uniforme și „lente” în medie.
-    """
     NUME = "Data Exfiltration"; SEVERITATE = "CRITICA"
 
-    #: Minim eșantioane de intervale pentru o deviație standard utilizabilă
     _MIN_ESTABILIRE_STD = 24
 
     def analizeaza(self, fereastra_secunde=60):
         prag_p       = 30       # Minim 30 de pachete
-        prag_std     = 0.5      # Permitem o deviație standard de max 0.5s (ping-ul are ~0.05s)
-        prag_b       = 1000     # Minim 1000 bytes în total
-        fw           = 120      # Căutăm în ultimele 120 de secunde
-        prag_med_min = 0.1      # Scăzut la 0.1s ca să nu blocheze ping-ul de 1 secundă
+        prag_std     = 0.5      # Permitem o deviatie standard de max 0.5s (ping-ul are ~0.05s)
+        prag_b       = 1000     # Minim 1000 bytes in total
+        fw           = 120      # Cautam in ultimele 120 de secunde
+        prag_med_min = 0.1      # Scazut la 0.1s ca sa nu blocheze ping-ul de 1 secunda
 
         excl_dst_sql, excl_dst_p = self._excl_dst()
         same_ip_cond = "AND src_ip != dst_ip"
 
-        # Lăsăm SQL-ul liber să verifice orice sursă (inclusiv mașina virtuală)
         src_sql, src_p = "", []
 
         cur = self.db._get_conexiune().cursor()
-        # AM ADAUGAT src_ip AICI PENTRU A IDENTIFICA CORECT ATACATORUL
         cur.execute(f"""
             SELECT src_ip, dst_ip,
                    GROUP_CONCAT(timestamp, ',') AS ts,
@@ -396,7 +369,7 @@ class DetectorExfiltrare(DetectorAtac):
             
             if std < prag_std:
                 self._emite_alerta(
-                    src_ip=r["src_ip"],  # Acum afișează IP-ul real care a generat traficul
+                    src_ip=r["src_ip"],  
                     dst_ip=r["dst_ip"],
                     detalii=f"Beaconing: {r['n']} pachete, "
                             f"{r['b'] // 1024}KB, "
@@ -404,18 +377,16 @@ class DetectorExfiltrare(DetectorAtac):
         cur.close()
 
 '''
-# 1000 pachete, câte unul la 10ms — suficient pentru a declanșa alerta (prag 100/60s)
+# 1000 pachete, cate unul la 10ms — suficient pentru a declansa alerta (prag 100/60s)
 sudo hping3 --icmp -c 1000 -i u10000 192.168.56.1
 '''
 class DetectorICMPFlood(DetectorAtac):
-    """Volum mare ICMP de la un IP extern catre gazda."""
     NUME = "ICMP Flood"; SEVERITATE = "MEDIE"
 
     def analizeaza(self, fereastra_secunde=60):
         prag = int(self.db.get_config_detector("ICMP Flood", "prag",      100))
         fw   = int(self.db.get_config_detector("ICMP Flood", "fereastra",  60))
 
-        # Excludem gazda ca sursa — ICMP flood vine din exterior
         excl_sql, excl_p = self._excl_src()
         cur = self.db._get_conexiune().cursor()
         
@@ -439,13 +410,11 @@ class DetectorICMPFlood(DetectorAtac):
 
 
 class DetectorDinamic(DetectorAtac):
-    """Aplica regulile din tabela reguli_detectie — adaugate din UI fara cod nou."""
     NUME = "Regula Custom"
 
     def __init__(self, db, backup=None, sursa="live", ip_gazda=None,
                  enrichment=None, reguli_db=None):
         super().__init__(db, backup, sursa, ip_gazda, enrichment)
-        # Surse pentru reguli custom (ex. DB live) separate de DB pachete (ex. captura pasiva)
         self.reguli_db = reguli_db if reguli_db is not None else db
 
     def analizeaza(self, fereastra_secunde=60):
@@ -462,7 +431,6 @@ class DetectorDinamic(DetectorAtac):
         if reg.get("tcp_flags_contine"):
             cond.append("tcp_flags LIKE ?")
             p.append(f"%{reg['tcp_flags_contine']}%")
-        # Excludem gazda si din regulile custom
         if self.ip_gazda:
             cond.append("src_ip != ?"); p.append(self.ip_gazda)
             cond.append("dst_ip != ?"); p.append(self.ip_gazda)
@@ -488,7 +456,6 @@ class DetectorDinamic(DetectorAtac):
 
 
 class ManagerDetectie:
-    """start() = periodic in thread daemon (live). ruleaza_o_data() = pasiv."""
     INTERVAL = 5
 
     def __init__(self, db, backup=None, sursa="live", ip_gazda=None,
@@ -516,13 +483,11 @@ class ManagerDetectie:
         ]
 
     def set_reference_time(self, ts):
-        """Propaga momentul de referinta la toti detectorii (analiza offline)."""
         for d in self.detectoare:
             if hasattr(d, "set_reference_time"):
                 d.set_reference_time(ts)
 
     def adauga_detector(self, d):
-        # Propagam ip_gazda si detectoarelor adaugate ulterior
         if self.ip_gazda and not getattr(d, "ip_gazda", None):
             d.ip_gazda = self.ip_gazda
         if getattr(d, "enrichment", None) is None:

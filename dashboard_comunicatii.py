@@ -1,8 +1,3 @@
-"""
-dashboard_comunicatii.py - Sectiunea Comunicatii.
-IP gazda selectabil dintre interfetele active (din app_state.interfete_active).
-Dropdown IP corespondent, filtre port, protocol, flags, interval relativ sau absolut.
-"""
 import time
 from datetime import datetime
 
@@ -18,7 +13,7 @@ from dashboard_utils import (
 from validators import validate_port
 
 
-class SecțiuneComunicatii:
+class SectiuneComunicatii:
 
     INTERVAL_OPTS = [
         {"label": "Ultimele 30 minute", "value": "1800"},
@@ -45,15 +40,10 @@ class SecțiuneComunicatii:
 
     def __init__(self, app_state, ip_gazda: str, prefix: str = "lc"):
         self.state    = app_state
-        self.ip_gazda = ip_gazda   # IP implicit (fallback)
+        self.ip_gazda = ip_gazda   
         self.P        = prefix
 
     def _ip_uri_gazda(self) -> list[dict]:
-        """
-        Returneaza optiunile pentru dropdown-ul IP gazda:
-        - toate IP-urile interfetelor active detectate de Scapy
-        - fallback: ip_gazda din constructor
-        """
         interfete = self.state.interfete_active
         if interfete:
             vazute = set()
@@ -77,7 +67,6 @@ class SecțiuneComunicatii:
 
         return html.Div([
             card([
-                # ── IP-uri + interval relativ ─────────────────────────────────
                 html.Div([
                     html.Div([
                         html.Label("IP Gazda:", style=lbl()),
@@ -108,7 +97,6 @@ class SecțiuneComunicatii:
                           "alignItems": "flex-end",
                           "marginBottom": "12px", "flexWrap": "wrap"}),
 
-                # ── Filtre porturi, protocol, flags, interval absolut ───────
                 html.Div([
                     html.Div([html.Label("Port Sursa:", style=lbl()),
                               dcc.Input(id=f"{p}-src-port", type="text",
@@ -153,9 +141,9 @@ class SecțiuneComunicatii:
                           "alignItems": "flex-end", "flexWrap": "wrap"}),
 
                 html.Div(
-                    "Dacă completezi Start și End, filtrul relativ de mai sus "
-                    "este ignorat pentru căutare. Lista „Comunică cu” se "
-                    "reîmprospătează la fiecare ciclu și se resetează selecția.",
+                    "Daca completezi Start si End, filtrul relativ de mai sus "
+                    "este ignorat pentru cautare. Lista „Comunica cu” se "
+                    "reimprospateaza la fiecare ciclu si se reseteaza selectia.",
                     style={"fontSize": "11px", "color": MUTED,
                            "marginTop": "8px", "lineHeight": "1.4"},
                 ),
@@ -178,17 +166,13 @@ class SecțiuneComunicatii:
             Output(f"{p}-ip1", "options"),
             Output(f"{p}-ip2", "options"),
             Input(f"{p}-ip-refresh", "n_intervals"),
-            Input(f"{p}-ip1", "value"), # Input declanșează actualizarea imediat la click
+            Input(f"{p}-ip1", "value"), 
         )
         def refresh_ip(_, ip1_sel):
-            # 1. Obținem interfețele active pentru primul dropdown
             opts_ip1 = self._ip_uri_gazda()
             
-            # 2. Determinăm IP-ul pentru care căutăm corespondenți
-            # Dacă ip1_sel e None, folosim primul IP disponibil din interfețe sau IP-ul gazdă global
             target_ip = ip1_sel or (opts_ip1[0]["value"] if opts_ip1 else self.ip_gazda)
             
-            # 3. Preluăm IP-urile corespondente
             if target_ip:
                 ip_uri = self.state.db.get_ip_uri_corespondente(target_ip, limit=200)
             else:
@@ -196,7 +180,6 @@ class SecțiuneComunicatii:
                 
             opts_ip2 = [{"label": ip, "value": ip} for ip in ip_uri]
             
-            # Returnăm opțiunile pentru ambele dropdown-uri
             return opts_ip1, opts_ip2
 
         @app.callback(
@@ -234,8 +217,8 @@ class SecțiuneComunicatii:
                 ts_end and str(ts_end).strip()))
             if has_any and (ts_min is None or ts_max is None):
                 return html.P(
-                    "Interval absolut invalid sau incomplet (completează "
-                    "Start și End sau lasă ambele goale).",
+                    "Interval absolut invalid sau incomplet (completeaza "
+                    "Start si End sau lasa ambele goale).",
                     style={"color": "#fca5a5"}), ""
             if ts_min is not None and ts_max is not None and ts_min > ts_max:
                 return html.P("Start trebuie ≤ End.",

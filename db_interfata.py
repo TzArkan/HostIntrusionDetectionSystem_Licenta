@@ -1,15 +1,3 @@
-"""
-db_interfata.py - Manager baza de date per-interfata.
-
-Structura fisiere:
-  hids_data/{iface_safe}/sesiune_curenta.db      <- sesiunea activa
-  hids_data/{iface_safe}/sesiuni_anterioare/
-      YYYY_MM_DD.db                               <- arhiva zilnica
-
-Aceasta clasa gestioneaza pachetele per-interfata pentru dashboard.
-Detectorii folosesc in continuare trafic_retea.db (toate interfetele combinate).
-"""
-
 import os
 import re
 import sqlite3
@@ -40,17 +28,11 @@ _BATCH_MS   = 500
 
 
 def sanitize_iface_name(name: str) -> str:
-    """Converteste numele interfetei intr-un nume de folder valid."""
     safe = re.sub(r"[^\w]", "_", name).strip("_")
     return safe[:64] if safe else "unknown"
 
 
 class ManagerSesiuneInterfata:
-    """
-    Gestioneaza pachetele pentru o singura interfata de retea.
-    Thread-safe: insertiile se acumuleaza si sunt comise in batch.
-    """
-
     def __init__(self, interfata: str, folder_baza: str = "hids_data"):
         self.interfata   = interfata
         self.iface_safe  = sanitize_iface_name(interfata)
@@ -80,10 +62,8 @@ class ManagerSesiuneInterfata:
         con.executescript(_SCHEMA_PACKETS)
         con.commit()
 
-    # ── Arhivare ──────────────────────────────────────────────────────────────
 
     def _arhiveaza_sesiune(self):
-        """Copiaza pachetele din sesiunea curenta in arhiva zilnica."""
         con = self._get_con()
         cur = con.cursor()
         cur.execute("SELECT COUNT(*) AS n FROM packets")
@@ -118,7 +98,6 @@ class ManagerSesiuneInterfata:
         print(f"[DB-{self.iface_safe}] Arhivat {n} pachete -> {azi}.db")
 
     def curata_sesiune(self):
-        """Arhiveaza si goleste sesiunea curenta. Apelat la fiecare pornire."""
         with self._lock:
             self._arhiveaza_sesiune()
             self._get_con().execute("DELETE FROM packets")
@@ -127,7 +106,6 @@ class ManagerSesiuneInterfata:
             self._last_commit = time.time()
         print(f"[DB-{self.iface_safe}] Sesiune curatata.")
 
-    # ── Inserare ──────────────────────────────────────────────────────────────
 
     def inserare_pachet(self, timestamp, src_ip, dst_ip,
                         src_port, dst_port, protocol,
@@ -155,7 +133,6 @@ class ManagerSesiuneInterfata:
                 self._pending     = 0
                 self._last_commit = time.time()
 
-    # ── Query-uri ─────────────────────────────────────────────────────────────
 
     def get_pachete_filtrate(self, src_ip=None, dst_ip=None,
                               src_port=None, dst_port=None,
@@ -265,11 +242,8 @@ class ManagerSesiuneInterfata:
         return rows
 
     def get_ip_uri_corespondente(self, ip_gazda, limit=200):
-        """Returnează IP-urile care au comunicat direct cu ip_gazda."""
         con = self._get_conexiune()
         cur = con.cursor()
-        # Selectăm IP-urile care apar ca destinație când gazda e sursă 
-        # ȘI IP-urile care apar ca sursă când gazda e destinație
         cur.execute(f"""
             SELECT DISTINCT ip FROM (
                 SELECT dst_ip AS ip FROM packets WHERE src_ip = ?
@@ -279,7 +253,6 @@ class ManagerSesiuneInterfata:
             LIMIT ?
         """, (ip_gazda, ip_gazda, ip_gazda, limit))
         
-        # Adaptăm în funcție de cum returnează cursurul tău (listă de tupluri sau dict-uri)
         rows = cur.fetchall()
         res = [r[0] if isinstance(r, tuple) else r['ip'] for r in rows]
         cur.close()
@@ -320,8 +293,7 @@ class ManagerSesiuneInterfata:
             cur.close()
         return rows
 
-    def get_distributie_protocol_timp(self, interval_secunde=300,
-                                       bucket_secunde=10):
+    def get_distributie_protocol_timp(self, interval_secunde=300, bucket_secunde=10):
         ts = time.time() - interval_secunde
         self.flush()
         with self._lock:
@@ -339,7 +311,6 @@ class ManagerSesiuneInterfata:
         return rows
 
     def get_sesiuni_anterioare(self) -> list:
-        """Lista fisierelor de arhiva disponibile pentru browsing offline."""
         fisiere = []
         for fn in sorted(os.listdir(self.folder_arh), reverse=True):
             if fn.endswith(".db"):

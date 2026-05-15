@@ -1,8 +1,3 @@
-"""
-db.py - Gestionarea bazei de date SQLite
-Tabele: packets, alerte, reguli_detectie, fim_baseline, config_detectori
-"""
-
 import sqlite3
 import threading
 import os
@@ -10,36 +5,33 @@ import time
 import json
 
 
-# Valorile implicite pentru toti parametrii detectori built-in
-# Format: (detector, param, valoare_implicita)
 CONFIG_DETECTORI_DEFAULT = [
-    # Port Scan
     ("Port Scan",          "prag",        20),
     ("Port Scan",          "fereastra",   60),
-    # DDoS SYN Flood
+
     ("DDoS SYN Flood",     "prag_syn",   200),
-    ("DDoS SYN Flood",     "prag_surse",   5),
+    ("DDoS SYN Flood",     "prag_surse",   2),
     ("DDoS SYN Flood",     "fereastra",   60),
-    # DoS SYN Flood
+
     ("DoS SYN Flood",      "prag_syn",   300),
     ("DoS SYN Flood",      "fereastra",   60),
-    # Brute Force
+
     ("Brute Force",        "prag",        10),
     ("Brute Force",        "fereastra",   60),
-    # DNS Amplification
+
     ("DNS Amplification",  "prag_ratio",  5.0),
     ("DNS Amplification",  "prag_volum",  50),
     ("DNS Amplification",  "fereastra",   60),
-    # Data Exfiltration (beaconing — volum mare + ritm foarte periodic; exclude rafala)
+
     ("Data Exfiltration",  "prag_pachete", 4000),
     ("Data Exfiltration",  "prag_std",      0.07),
     ("Data Exfiltration",  "prag_bytes",    8388608),
     ("Data Exfiltration",  "prag_med_min",  14.0),
     ("Data Exfiltration",  "fereastra",     300),
-    # ICMP Flood
+
     ("ICMP Flood",         "prag",       100),
     ("ICMP Flood",         "fereastra",   60),
-    # Anomalie ML
+
     ("Anomalie ML",        "fereastra",   60),
 ]
 
@@ -69,7 +61,6 @@ class ManagerBazaDate:
             self._local.conexiune = con
         return self._local.conexiune
 
-    # ─── INITIALIZARE ────────────────────────────────────────────────────────
 
     def initializare_baza_date(self):
         con = self._get_conexiune()
@@ -116,7 +107,6 @@ class ManagerBazaDate:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_alerte_src_country ON alerte(src_country)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_alerte_local_process ON alerte(local_process)")
 
-        # Migrare coloane pentru baze create cu versiuni anterioare
         cur.execute("PRAGMA table_info(alerte)")
         cols = {r["name"] for r in cur.fetchall()}
         alter_map = {
@@ -171,7 +161,6 @@ class ManagerBazaDate:
             )
         """)
 
-        # Inserare valori implicite (ignora daca exista deja)
         for detector, param, valoare in CONFIG_DETECTORI_DEFAULT:
             cur.execute("""
                 INSERT OR IGNORE INTO config_detectori (detector, param, valoare)
@@ -190,7 +179,6 @@ class ManagerBazaDate:
                 """, (val, "Data Exfiltration", param))
 
         migrat_exfil = False
-        # Istoric lax (10 / 2.0 / 50000)
         if (ex.get("prag_pachete") == 10.0 and ex.get("prag_std") == 2.0
                 and ex.get("prag_bytes") == 50000.0):
             _migrate_exfil((
@@ -200,7 +188,6 @@ class ManagerBazaDate:
             ))
             migrat_exfil = True
 
-        # Mijlociu (40 / 0.85 / 200000)
         elif ((ex.get("prag_std") == 0.85 and ex.get("prag_bytes") == 200000.0)
               and abs(ex.get("prag_pachete", -1.0) - 40.0) < 0.01):
             _migrate_exfil((
@@ -216,14 +203,13 @@ class ManagerBazaDate:
         """, (14.0,))
 
         if migrat_exfil:
-            print("[DB] Data Exfiltration: praguri mărite puternic + filtru anti-rafală (prag_med_min).")
+            print("[DB] Data Exfiltration: praguri marite puternic + filtru anti-rafala (prag_med_min).")
 
         con.commit()
         cur.close()
         print(f"[DB] Baza de date initializata: {self.cale_baza_date}")
 
     def curata_sesiune(self):
-        """Goleste pachetele capturate pentru sesiunea curenta (detectorii folosesc acest flux)."""
         if self.read_only:
             return
         con = self._get_conexiune()
@@ -231,7 +217,6 @@ class ManagerBazaDate:
         con.commit()
         print("[DB] Tabel packets golit (sesiune noua).")
 
-    # ─── PACHETE ─────────────────────────────────────────────────────────────
 
     def inserare_pachet(self, timestamp, src_ip, dst_ip, src_port, dst_port,
                         protocol, packet_len, tcp_flags=None):
@@ -270,13 +255,10 @@ class ManagerBazaDate:
             return None
         return float(row["m"])
 
-    def get_pachete_filtrate(self, src_ip=None, dst_ip=None,
-                             src_port=None, dst_port=None,
-                             protocol=None, tcp_flags=None,
-                             min_len=None, max_len=None,
+    def get_pachete_filtrate(self, src_ip=None, dst_ip=None, src_port=None, dst_port=None,
+                             protocol=None, tcp_flags=None, min_len=None, max_len=None,
                              ip_exclus=None, limit=500, min_id=None,
                              ts_min=None, ts_max=None):
-        """Interogare pachete cu filtre multiple optionale."""
         cond   = []
         params = []
         if src_ip and src_ip.strip():
@@ -342,11 +324,8 @@ class ManagerBazaDate:
         return rows
 
     def get_ip_uri_corespondente(self, ip_gazda, limit=200):
-        """Returnează IP-urile care au comunicat direct cu ip_gazda."""
         con = self._get_conexiune()
         cur = con.cursor()
-        # Selectăm IP-urile care apar ca destinație când gazda e sursă 
-        # ȘI IP-urile care apar ca sursă când gazda e destinație
         cur.execute(f"""
             SELECT DISTINCT ip FROM (
                 SELECT dst_ip AS ip FROM packets WHERE src_ip = ?
@@ -356,7 +335,6 @@ class ManagerBazaDate:
             LIMIT ?
         """, (ip_gazda, ip_gazda, ip_gazda, limit))
         
-        # Adaptăm în funcție de cum returnează cursurul tău (listă de tupluri sau dict-uri)
         rows = cur.fetchall()
         res = [r[0] if isinstance(r, tuple) else r['ip'] for r in rows]
         cur.close()
@@ -453,8 +431,6 @@ class ManagerBazaDate:
         cur.close()
         return rows
 
-    # ─── STATISTICI GRAFICE ───────────────────────────────────────────────────
-
     def get_statistici_alerte(self):
         cur = self._get_conexiune().cursor()
         cur.execute("""
@@ -483,9 +459,7 @@ class ManagerBazaDate:
             return 0.0
         return round(row["total"] / interval_secunde, 2)
 
-    def get_pachete_per_secunda_per_ip(self, interval_secunde=300,
-                                        bucket_secunde=10,
-                                        ip_exclus=None):
+    def get_pachete_per_secunda_per_ip(self, interval_secunde=300, bucket_secunde=10, ip_exclus=None):
         ts = time.time() - interval_secunde
         ec = "AND src_ip != ?" if ip_exclus else ""
         params_ec = [ip_exclus] if ip_exclus else []
@@ -503,8 +477,7 @@ class ManagerBazaDate:
         cur.close()
         return rows
 
-    def get_distributie_protocol_timp(self, interval_secunde=300,
-                                       bucket_secunde=10):
+    def get_distributie_protocol_timp(self, interval_secunde=300, bucket_secunde=10):
         ts = time.time() - interval_secunde
         cur = self._get_conexiune().cursor()
         cur.execute(f"""
@@ -518,8 +491,6 @@ class ManagerBazaDate:
         rows = [dict(r) for r in cur.fetchall()]
         cur.close()
         return rows
-
-    # ─── ALERTE ──────────────────────────────────────────────────────────────
 
     def inserare_alerta(self, tip_atac, severitate, src_ip=None,
                         dst_ip=None, detalii="", sursa="live", context=None):
@@ -696,7 +667,6 @@ class ManagerBazaDate:
         cur.close()
         return int(row["c"]) if row else 0
 
-    # ─── REGULI DETECTIE ─────────────────────────────────────────────────────
 
     def inserare_regula(self, nume, protocol="all", port_destinatie=None,
                         tcp_flags_contine=None, prag_count=10,
@@ -761,10 +731,8 @@ class ManagerBazaDate:
         cur.close()
         return rows
 
-    # ─── CONFIG DETECTORI ────────────────────────────────────────────────────
 
     def get_config_detectori(self):
-        """Returneaza toti parametrii tuturor detectori."""
         cur = self._get_conexiune().cursor()
         cur.execute("""
             SELECT detector, param, valoare
@@ -775,12 +743,7 @@ class ManagerBazaDate:
         cur.close()
         return rows
 
-    def get_config_detector(self, detector: str, param: str,
-                             default: float = 0) -> float:
-        """
-        Returneaza valoarea unui parametru specific pentru un detector.
-        Folosit de detectori la fiecare rulare.
-        """
+    def get_config_detector(self, detector: str, param: str, default: float = 0) -> float:
         cur = self._get_conexiune().cursor()
         cur.execute("""
             SELECT valoare FROM config_detectori
@@ -790,9 +753,7 @@ class ManagerBazaDate:
         cur.close()
         return float(row["valoare"]) if row else default
 
-    def update_config_detector(self, detector: str, param: str,
-                                valoare: float):
-        """Actualizeaza sau insereaza un parametru (upsert)."""
+    def update_config_detector(self, detector: str, param: str, valoare: float):
         if self.read_only:
             return
         con = self._get_conexiune()
@@ -805,7 +766,6 @@ class ManagerBazaDate:
         con.commit()
         cur.close()
 
-    # ─── FIM BASELINE ────────────────────────────────────────────────────────
 
     def upsert_fim_baseline(self, cale_fisier, hash_sha256):
         if self.read_only:
@@ -841,7 +801,6 @@ class ManagerBazaDate:
         cur.close()
 
     def get_fim_cai_user(self):
-        """Cai adaugate din Setari (monitorizare FIM extinsa)."""
         cur = self._get_conexiune().cursor()
         cur.execute(
             "SELECT id, cale, creat_ts FROM fim_cai_user ORDER BY id ASC")
@@ -850,7 +809,6 @@ class ManagerBazaDate:
         return rows
 
     def inserare_fim_cale_user(self, cale: str) -> bool:
-        """Returneaza True daca inserarea a reusit (cale noua)."""
         if self.read_only:
             return False
         cale = (cale or "").strip()
@@ -880,7 +838,6 @@ class ManagerBazaDate:
         con.commit()
         cur.close()
 
-    # ─── ML FEATURES ─────────────────────────────────────────────────────────
 
     def get_features_fereastra(self, ts_start, ts_end):
         cur = self._get_conexiune().cursor()
