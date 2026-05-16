@@ -46,7 +46,9 @@ class AplicatieMonitorRetea:
 
         self.fim = MonitorIntegritateFisiere(
             db=self.db_manager,
-            backup=self.backup)
+            backup=self.backup,
+            interval_secunde=2
+            )
         self.state.fim_monitor = self.fim
 
         self.detector_ml = DetectorAnomalii(

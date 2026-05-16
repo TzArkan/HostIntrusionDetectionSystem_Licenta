@@ -60,7 +60,6 @@ class SectiunePasiva:
         ])
 
     def register_callbacks(self, app):
-        # ── Browse fisier (tkinter) ───────────────────────────────────────────
         @app.callback(
             Output("p-cale-store",   "data"),
             Output("p-cale-afisata", "children"),

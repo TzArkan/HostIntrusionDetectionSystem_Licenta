@@ -326,6 +326,12 @@ class SectiuneSetari:
                         style=inp({"flex": "1", "minWidth": "260px",
                                    "fontSize": "12px"})),
                     html.Button(
+                        "📂 Browse",
+                        id=f"{p}-fim-browse",
+                        n_clicks=0,
+                        style=btn("#1e40af", "#93c5fd")
+                    ),
+                    html.Button(
                         "+ Adauga la monitorizare",
                         id=f"{p}-fim-add",
                         n_clicks=0,
@@ -982,7 +988,38 @@ class SectiuneSetari:
                 elemente.append(rand)
             return elemente
 
-
+        @app.callback(
+            Output(f"{p}-fim-cale", "value"),
+            Input(f"{p}-fim-browse", "n_clicks"),
+            prevent_initial_call=True,
+        )
+        def browse_fim_file(_):
+            try:
+                import tkinter as tk
+                from tkinter import filedialog
+                import os
+                import dash
+                
+                root = tk.Tk()
+                root.withdraw()
+                root.wm_attributes("-topmost", True)
+                
+                cale = filedialog.askopenfilename(
+                    title="Selecteaza fisier pentru FIM",
+                    filetypes=[("Toate fisierele", "*.*")]
+                )
+                
+                root.destroy()
+                
+                if cale:
+                    return os.path.normpath(cale)
+                
+                return dash.no_update
+                
+            except Exception as e:
+                print(f"[SETARI] Eroare la deschiderea dialogului FIM: {e}")
+                return dash.no_update
+            
         @app.callback(
             Output(f"{p}-fim-msg", "children"),
             Output(f"{p}-fim-store", "data"),

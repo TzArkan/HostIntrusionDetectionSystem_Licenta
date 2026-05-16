@@ -325,18 +325,24 @@ class DashboardRetea:
         )
         def render_nav(sectiune, mod, _, last_ts):
             alerte_noi = 0
-            if sectiune != "alerte":
-                try:
+            try:
+                if mod == "pasiv" or sectiune != "alerte":
                     alerte_noi = self.state.db.count_alerte(
-                        ts_start=last_ts if last_ts else 0,
-                        vazut=False)
-                except Exception:
-                    alerte_noi = 0
+                        ts_start=last_ts if last_ts else 0, vazut=False)
+            except Exception as e:
+                alerte_noi = 0
+            
+            if alerte_noi > 0:
+                live_label = f"⬤ Live 🔴({alerte_noi})"
+            else:
+                live_label = f"⬤ Live"
 
             mode_btns = [
-                _mode_btn("⬤ Live",  "live",  mod == "live"),
-                _mode_btn("⏱ Pasiv", "pasiv", mod == "pasiv"),
+                _mode_btn(live_label, "live", mod == "live"),
+                _mode_btn("⏱ Pasiv", "pasiv", mod == "pasiv")
             ]
+
+
             if mod == "live":
                 items = []
                 for val, label in SECTIUNI_LIVE:

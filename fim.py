@@ -6,7 +6,7 @@ from backup import DestinatiBackup, BackupNoop
 
 
 class MonitorIntegritateFisiere:
-    INTERVAL_VERIFICARE = 300   
+    INTERVAL_VERIFICARE = 10 
 
     FISIERE_IMPLICITE = [
         r"C:\Windows\System32\drivers\etc\hosts",
@@ -88,10 +88,11 @@ class MonitorIntegritateFisiere:
             for r in self.db.get_fim_baseline()
         }
 
-        for cale in self.fisiere:
+        for cale in list(self.fisiere):
             if not os.path.exists(cale):
                 if cale in baseline:
                     self._emite_alerta("FISIER STERS sau MUTAT", cale)
+                    self.scoate_fisier(cale)
                 continue 
 
             hash_curent = self.hash_fisier(cale)
