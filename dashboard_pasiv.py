@@ -94,9 +94,11 @@ class SectiunePasiva:
         def incarca(_, cale):
             if not cale:
                 return "Selecteaza mai intai un fisier.", []
-            ok = self.state.activeaza_mod_pasiv(cale)
+            
+            ok, mesaj = self.state.activeaza_mod_pasiv(cale)
             if not ok:
-                return "Eroare: fisierul nu a putut fi deschis.", []
+                from dash import html
+                return html.Span(mesaj, style={"color": "#fca5a5"}), []
 
             continut = [
                 dcc.Tabs(id="p-subtabs", value="p-trafic",
@@ -109,7 +111,7 @@ class SectiunePasiva:
                     ]),
                 html.Div(id="p-subtab-content"),
             ]
-            return f"✓ DB incarcat: {cale}", continut
+            return mesaj, continut
 
         @app.callback(
             Output("p-subtab-content", "children"),

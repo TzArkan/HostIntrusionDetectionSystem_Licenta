@@ -50,7 +50,7 @@ class AppState:
             return self.db_pasiv
         return self.db_live
 
-    def activeaza_mod_pasiv(self, cale_db: str) -> bool:
+    def activeaza_mod_pasiv(self, cale_db: str) -> tuple[bool, str]:
         try:
             if self._pasiv_scan_tmp and os.path.isfile(self._pasiv_scan_tmp):
                 try:
@@ -58,14 +58,31 @@ class AppState:
                 except OSError:
                     pass
                 self._pasiv_scan_tmp = None
-            self.db_pasiv = ManagerBazaDate(cale_db, read_only=True)
+            
+            db_test = ManagerBazaDate(cale_db, read_only=True)
+            
+            cur = db_test._get_conexiune().cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tabele_existente = {row["name"] for row in cur.fetchall()}
+            cur.close()
+            
+            tabele_necesare = {"packets", "alerte"}
+            tabele_lipsa = tabele_necesare - tabele_existente
+            
+            if tabele_lipsa:
+                msg_err = f"Eroare: Fisierul nu este o captura HIDS valida (lipsesc tabelele: {', '.join(tabele_lipsa)})."
+                print(f"[STATE] {msg_err}")
+                return False, msg_err
+
+            self.db_pasiv = db_test
             self.mod = "pasiv"
             self._cale_pasiv_original = os.path.abspath(cale_db)
             print(f"[STATE] Mod pasiv activ: {cale_db}")
-            return True
+            return True, f"✓ DB incarcat: {cale_db}"
+            
         except Exception as e:
             print(f"[STATE] Eroare incarcare DB pasiv: {e}")
-            return False
+            return False, f"Eroare la deschiderea fisierului: {e}"
 
     def activeaza_mod_live(self):
         self.mod = "live"

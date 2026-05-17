@@ -277,10 +277,10 @@ class SectiuneSetari:
                               placeholder="Flags",
                               style=inp({"width": "85px"})),
                     dcc.Input(id=f"{p}-r-prag", type="number",
-                              placeholder="Prag", value=10,
+                              placeholder="Prag", 
                               style=inp({"width": "75px"})),
                     dcc.Input(id=f"{p}-r-fereastra", type="number",
-                              placeholder="Secunde", value=60,
+                              placeholder="Secunde", 
                               style=inp({"width": "85px"})),
                     dcc.Dropdown(id=f"{p}-r-sev",
                         options=[{"label": x, "value": x}
