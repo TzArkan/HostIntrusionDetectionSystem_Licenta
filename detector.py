@@ -178,7 +178,7 @@ class DetectorSYNFlood(DetectorAtac):
 
     def analizeaza(self, fereastra_secunde=10):
         prag_syn_ddos = int(self.db.get_config_detector("DDoS SYN Flood", "prag_syn", 200))
-        prag_surse    = int(self.db.get_config_detector("DDoS SYN Flood", "prag_surse", 5))
+        prag_surse    = int(self.db.get_config_detector("DDoS SYN Flood", "prag_surse", 2))
         fw_ddos       = int(self.db.get_config_detector("DDoS SYN Flood", "fereastra", 60))
         prag_syn_dos  = int(self.db.get_config_detector("DoS SYN Flood", "prag_syn", 300))
         fw_dos        = int(self.db.get_config_detector("DoS SYN Flood", "fereastra", 60))
@@ -243,7 +243,7 @@ class DetectorBruteForce(DetectorAtac):
     NUME = "Brute Force"; SEVERITATE = "RIDICATA"
     PORTURI = {"22": "SSH", "3389": "RDP", "21": "FTP", "23": "Telnet"}
 
-    def analizeaza(self, fereastra_secunde=60):
+    def analizeaza(self, fereastra_secunde=10):
         prag = int(self.db.get_config_detector("Brute Force", "prag",      10))
         fw   = int(self.db.get_config_detector("Brute Force", "fereastra", 60))
 
@@ -257,6 +257,7 @@ class DetectorBruteForce(DetectorAtac):
             FROM packets
             WHERE timestamp >= ?
               AND protocol = 'TCP'
+              AND tcp_flags = 'S'
               AND dst_port IN ({ph})
               {excl_sql}
             GROUP BY src_ip, dst_ip, dst_port

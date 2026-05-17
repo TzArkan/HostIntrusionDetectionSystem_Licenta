@@ -85,8 +85,14 @@ class AplicatieMonitorRetea:
         return BackupMultiplu(destinatii) if destinatii else BackupNoop()
 
     def _este_admin(self):
-        try: return ctypes.windll.shell32.IsUserAnAdmin() != 0
-        except: return True
+        import os
+        if os.name == 'nt':  
+            try: 
+                return ctypes.windll.shell32.IsUserAnAdmin() != 0
+            except: 
+                return False
+        else:  # posix - linux/macos
+            return os.geteuid() == 0
 
     def ruleaza(self):
         print("HIDS - Monitor Retea & Detectie Intruziuni")

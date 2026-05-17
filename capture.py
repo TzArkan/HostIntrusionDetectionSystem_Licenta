@@ -13,6 +13,8 @@ _VIRTUAL_KEYWORDS = (
     "tap", "tun", "loopback", "pseudo",
     "miniport", "wan miniport", "teredo",
     "isatap", "6to4",
+    
+    "veth", "br-", "docker", "virbr", "lo"
 )
 
 _PHYSICAL_KEYWORDS = (
@@ -20,6 +22,8 @@ _PHYSICAL_KEYWORDS = (
     "ethernet", "eth", "lan", "realtek",
     "intel", "broadcom", "atheros", "qualcomm",
     "gigabit", "network adapter",
+
+    "enp", "wlp", "eno", "ens", "wl"
 )
 
 

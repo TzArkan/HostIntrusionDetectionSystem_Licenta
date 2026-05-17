@@ -4,15 +4,22 @@ import time
 import threading
 from backup import DestinatiBackup, BackupNoop
 
-
-class MonitorIntegritateFisiere:
-    INTERVAL_VERIFICARE = 10 
-
-    FISIERE_IMPLICITE = [
+if os.name == 'nt':
+    FISIERE_IMPLICITE_SISTEM = [
         r"C:\Windows\System32\drivers\etc\hosts",
         r"C:\Windows\System32\drivers\etc\services",
         r"C:\Windows\System32\drivers\etc\networks",
     ]
+else:
+    FISIERE_IMPLICITE_SISTEM = [
+        "/etc/hosts",
+        "/etc/passwd",
+        "/etc/resolv.conf",
+    ]
+
+class MonitorIntegritateFisiere:
+    INTERVAL_VERIFICARE = 10 
+    FISIERE_IMPLICITE = FISIERE_IMPLICITE_SISTEM
 
     def __init__(self, db, backup: DestinatiBackup = None,
                  fisiere_suplimentare: list = None,
