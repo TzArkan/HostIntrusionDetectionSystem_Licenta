@@ -1024,50 +1024,58 @@ class SectiuneSetari:
             Output(f"{p}-fim-msg", "children"),
             Output(f"{p}-fim-store", "data"),
             Input(f"{p}-fim-add", "n_clicks"),
+            Input({"type": f"{p}-fim-del", "index": dash.dependencies.ALL}, "n_clicks"),
             State(f"{p}-fim-cale", "value"),
             State(f"{p}-fim-store", "data"),
             prevent_initial_call=True,
         )
-        def fim_adauga(_, cale, ctr):
-            if not cale or not str(cale).strip():
-                return "Introduceti o cale completa catre fisier.", ctr or 0
-            cale_n = os.path.normpath(str(cale).strip())
-            ok = self.state.db_live.inserare_fim_cale_user(cale_n)
-            if not ok:
-                return ("Cale deja in lista sau nu s-a putut salva "
-                        "(baza read-only)."), ctr or 0
-            fm = getattr(self.state, "fim_monitor", None)
-            if fm:
-                fm.adauga_fisier(cale_n)
-            return f"✓ Adaugat la monitorizare: {cale_n}", (ctr or 0) + 1
-
-        @app.callback(
-            Output(f"{p}-fim-store", "data", allow_duplicate=True),
-            Input({"type": f"{p}-fim-del",
-                   "index": dash.dependencies.ALL}, "n_clicks"),
-            State(f"{p}-fim-store", "data"),
-            prevent_initial_call=True,
-        )
-        def fim_sterge(clicks, ctr):
+        def gestionare_fim(c_add, c_dels, cale, ctr):
             ctx = dash.callback_context
-            if not ctx.triggered or not any(c for c in clicks if c):
+            if not ctx.triggered:
                 raise PreventUpdate
-            try:
-                info = json.loads(ctx.triggered[0]["prop_id"].split(".")[0])
-                rid = int(info["index"])
-            except Exception:
-                raise PreventUpdate
-            cale_rm = None
-            for r in self.state.db_live.get_fim_cai_user():
-                if r["id"] == rid:
-                    cale_rm = r["cale"]
-                    break
-            if cale_rm:
-                self.state.db_live.sterge_fim_cale_user(rid)
+                
+            trigger_id = ctx.triggered[0]["prop_id"]
+            msg = ""
+            nou_ctr = (ctr or 0)
+
+            if f"{p}-fim-add" in trigger_id:
+                if not cale or not str(cale).strip():
+                    return "Introduceti o cale completa catre fisier.", nou_ctr
+                cale_n = os.path.normpath(str(cale).strip())
+                ok = self.state.db_live.inserare_fim_cale_user(cale_n)
+                if not ok:
+                    return "Cale deja in lista sau nu s-a putut salva (baza read-only).", nou_ctr
+                
                 fm = getattr(self.state, "fim_monitor", None)
                 if fm:
-                    fm.scoate_fisier(cale_rm)
-            return (ctr or 0) + 1
+                    fm.adauga_fisier(cale_n)
+                msg = f"✓ Adaugat la monitorizare: {cale_n}"
+                nou_ctr += 1
+
+            else:
+                try:
+                    info = json.loads(trigger_id.split(".")[0])
+                    rid = int(info["index"])
+                except Exception:
+                    raise PreventUpdate
+                    
+                cale_rm = None
+                for r in self.state.db_live.get_fim_cai_user():
+                    if r["id"] == rid:
+                        cale_rm = r["cale"]
+                        break
+                        
+                if cale_rm:
+                    self.state.db_live.sterge_fim_cale_user(rid)
+                    fm = getattr(self.state, "fim_monitor", None)
+                    if fm:
+                        fm.scoate_fisier(cale_rm)
+                    msg = f"🗑 Scos de la monitorizare: {os.path.basename(cale_rm)}"
+                    nou_ctr += 1
+                else:
+                    raise PreventUpdate
+
+            return msg, nou_ctr
 
         @app.callback(
             Output(f"{p}-fim-lista", "children"),

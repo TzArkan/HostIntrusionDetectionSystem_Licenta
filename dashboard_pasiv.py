@@ -97,7 +97,6 @@ class SectiunePasiva:
             
             ok, mesaj = self.state.activeaza_mod_pasiv(cale)
             if not ok:
-                from dash import html
                 return html.Span(mesaj, style={"color": "#fca5a5"}), []
 
             continut = [
