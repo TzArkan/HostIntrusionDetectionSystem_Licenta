@@ -7,32 +7,32 @@ import json
 
 CONFIG_DETECTORI_DEFAULT = [
     ("Port Scan",          "prag",        20),
-    ("Port Scan",          "fereastra",   60),
+    ("Port Scan",          "fereastra",   10),
 
     ("DDoS SYN Flood",     "prag_syn",   200),
-    ("DDoS SYN Flood",     "prag_surse",   2),
-    ("DDoS SYN Flood",     "fereastra",   60),
+    ("DDoS SYN Flood",     "prag_surse",   3),
+    ("DDoS SYN Flood",     "fereastra",   10),
 
     ("DoS SYN Flood",      "prag_syn",   300),
-    ("DoS SYN Flood",      "fereastra",   60),
+    ("DoS SYN Flood",      "fereastra",   10),
 
     ("Brute Force",        "prag",        10),
-    ("Brute Force",        "fereastra",   60),
+    ("Brute Force",        "fereastra",   10),
 
     ("DNS Amplification",  "prag_ratio",  5.0),
     ("DNS Amplification",  "prag_volum",  50),
-    ("DNS Amplification",  "fereastra",   60),
+    ("DNS Amplification",  "fereastra",   10),
 
     ("Data Exfiltration",  "prag_pachete", 4000),
-    ("Data Exfiltration",  "prag_std",      0.07),
+    ("Data Exfiltration",  "prag_std",      1),
     ("Data Exfiltration",  "prag_bytes",    8388608),
     ("Data Exfiltration",  "prag_med_min",  14.0),
-    ("Data Exfiltration",  "fereastra",     300),
+    ("Data Exfiltration",  "fereastra",     30),
 
     ("ICMP Flood",         "prag",       100),
-    ("ICMP Flood",         "fereastra",   60),
+    ("ICMP Flood",         "fereastra",   10),
 
-    ("Anomalie ML",        "fereastra",   60),
+    ("Anomalie ML",        "fereastra",   5),
 ]
 
 
@@ -45,8 +45,16 @@ class ManagerBazaDate:
             self.cale_baza_date = os.path.join(director_principal, nume_baza_date)
         self.read_only      = read_only
         self._local         = threading.local()
+        self._toate_conexiunile: list = []
+        self._lock_conexiuni = threading.Lock()
 
     def _get_conexiune(self):
+        if hasattr(self._local, "conexiune") and self._local.conexiune is not None:
+            try:
+                self._local.conexiune.execute("SELECT 1")
+            except (sqlite3.ProgrammingError, sqlite3.OperationalError):
+                self._local.conexiune = None
+
         if not hasattr(self._local, "conexiune") or \
                 self._local.conexiune is None:
             if self.read_only:
@@ -56,11 +64,45 @@ class ManagerBazaDate:
                 con = sqlite3.connect(self.cale_baza_date,
                                       check_same_thread=False)
             con.row_factory = sqlite3.Row
-            con.execute("PRAGMA journal_mode=WAL")
-            con.execute("PRAGMA synchronous=NORMAL")
+            if not self.read_only:
+                con.execute("PRAGMA journal_mode=WAL")
+                con.execute("PRAGMA synchronous=NORMAL")
             self._local.conexiune = con
+            
+            with self._lock_conexiuni:
+                self._toate_conexiunile.append(con)
+                
         return self._local.conexiune
 
+    def inchide_conexiune(self):
+        with self._lock_conexiuni:
+            for con in list(self._toate_conexiunile):
+                try:
+                    con.close()
+                except Exception:
+                    pass
+            self._toate_conexiunile.clear()
+            
+        if hasattr(self._local, "conexiune"):
+            self._local.conexiune = None
+        print(f"[DB] Toate conexiunile cross-thread catre {os.path.basename(self.cale_baza_date)} au fost inchise.")
+
+    def inchide_toate_conexiunile(self):
+        with self._lock_conexiuni:
+            for con in self._toate_conexiunile:
+                try:
+                    if not self.read_only:
+                        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                        con.execute("PRAGMA journal_mode=DELETE")
+                    con.close()
+                except Exception:
+                    pass
+            self._toate_conexiunile.clear()
+        try:
+            self._local.conexiune = None
+        except Exception:
+            pass
+        print(f"[DB] Toate conexiunile inchise: {self.cale_baza_date}")
 
     def initializare_baza_date(self):
         con = self._get_conexiune()
@@ -839,9 +881,14 @@ class ManagerBazaDate:
         cur.close()
 
 
-    def get_features_fereastra(self, ts_start, ts_end):
+    def get_features_fereastra(self, ts_start, ts_end, ip_gazda=None):
+        filtru = ""
+        params = [ts_start, ts_end]
+        if ip_gazda:
+            filtru = "AND (src_ip = ? OR dst_ip = ?)"
+            params.extend([ip_gazda, ip_gazda])
         cur = self._get_conexiune().cursor()
-        cur.execute("""
+        cur.execute(f"""
             SELECT COUNT(*) AS total_pachete,
                    COALESCE(SUM(packet_len),0) AS total_bytes,
                    COUNT(DISTINCT src_ip)      AS surse_unice,
@@ -851,8 +898,8 @@ class ManagerBazaDate:
                    COUNT(CASE WHEN protocol='TCP'       THEN 1 END) AS cnt_tcp,
                    COUNT(CASE WHEN protocol='UDP'       THEN 1 END) AS cnt_udp,
                    COUNT(CASE WHEN tcp_flags LIKE '%S%' THEN 1 END) AS cnt_syn
-            FROM packets WHERE timestamp>=? AND timestamp<?
-        """, (ts_start, ts_end))
+            FROM packets WHERE timestamp>=? AND timestamp<? {filtru}
+    """, params)
         row = cur.fetchone()
         cur.close()
         return dict(row) if row else None

@@ -319,6 +319,16 @@ class SectiuneAlerte:
                      open_id, interval_val, status_val, sev_val, tip_val, ip_val,
                      country_val, proc_val, asn_val, ext_only_val, portscan_val):
             
+            db_sursa = self.state.db_pasiv if self.P == "pa" else self.state.db_live
+            if not db_sursa:
+                return [], "0 alerte"
+
+            ctx = dash.callback_context
+            trig = ctx.triggered[0]["prop_id"] if ctx.triggered else ""
+            
+            if "pa-scan-tick" in trig and self.P == "la":
+                raise PreventUpdate
+
             ts_start = None
             if interval_val and interval_val != "all":
                 try:
@@ -326,7 +336,7 @@ class SectiuneAlerte:
                 except Exception:
                     pass
 
-            alerte = self.state.db.get_alerte(
+            alerte = db_sursa.get_alerte(
                 limit=200, ts_start=ts_start,
                 severitate=sev_val,
                 tip_atac=tip_val,
@@ -529,7 +539,9 @@ class SectiuneAlerte:
                 State("pa-scan-tick", "data"),
                 prevent_initial_call=True,
             )
-            def scan_pasiv_db(_, tick):
+            def scan_pasiv_db(n_clicks, tick):
+                if not n_clicks:          
+                    raise PreventUpdate   
                 _ok, msg = self.state.scan_reguli_pe_captura_pasiva(get_ip_gazda())
                 return msg, (tick or 0) + 1
 

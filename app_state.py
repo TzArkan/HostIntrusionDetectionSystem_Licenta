@@ -1,6 +1,5 @@
 import os
 import threading
-import tempfile
 import shutil
 from db import ManagerBazaDate
 
@@ -37,7 +36,7 @@ class AppState:
         self.fim_monitor = None
 
         self._cale_pasiv_original: str | None = None
-        self._pasiv_scan_tmp: str | None = None
+        self._cale_scan_db: str | None = None
 
     def get_manager_interfata(self, iface_name: str = None):
         if not iface_name or iface_name not in self.manageri_interfete:
@@ -52,12 +51,15 @@ class AppState:
 
     def activeaza_mod_pasiv(self, cale_db: str) -> tuple[bool, str]:
         try:
-            if self._pasiv_scan_tmp and os.path.isfile(self._pasiv_scan_tmp):
+            if self.db_pasiv is not None:
+                self.db_pasiv.inchide_conexiune()
+
+            if self._cale_scan_db and os.path.isfile(self._cale_scan_db):
                 try:
-                    os.unlink(self._pasiv_scan_tmp)
+                    os.unlink(self._cale_scan_db)
                 except OSError:
                     pass
-                self._pasiv_scan_tmp = None
+                self._cale_scan_db = None
             
             db_test = ManagerBazaDate(cale_db, read_only=True)
             
@@ -72,6 +74,9 @@ class AppState:
             if tabele_lipsa:
                 msg_err = f"Eroare: Fisierul nu este o captura HIDS valida (lipsesc tabelele: {', '.join(tabele_lipsa)})."
                 print(f"[STATE] {msg_err}")
+                
+                db_test.inchide_toate_conexiunile()
+                
                 return False, msg_err
 
             self.db_pasiv = db_test
@@ -100,33 +105,40 @@ class AppState:
                 self._cale_pasiv_original):
             return False, "Incarca mai intai un fisier .db in modul Pasiv."
 
-        if self._pasiv_scan_tmp and os.path.isfile(self._pasiv_scan_tmp):
+        if self._cale_scan_db and os.path.isfile(self._cale_scan_db):
+            mdb.inchide_toate_conexiunile()
             try:
-                os.unlink(self._pasiv_scan_tmp)
+                os.unlink(self._cale_scan_db)
             except OSError:
                 pass
-            self._pasiv_scan_tmp = None
+            self._cale_scan_db = None
 
-        fd, tmp = tempfile.mkstemp(suffix=".db")
-        os.close(fd)
-        try:
-            shutil.copy2(self._cale_pasiv_original, tmp)
-        except OSError as e:
+        basename = os.path.splitext(
+            os.path.basename(self._cale_pasiv_original))[0]
+        cale_scan = os.path.join(_IMPORT_DIR, f"{basename}_scan.db")
+
+        if os.path.isfile(cale_scan):
+            mdb.inchide_toate_conexiunile()
             try:
-                os.unlink(tmp)
-            except OSError:
-                pass
+                os.unlink(cale_scan)
+            except OSError as e:
+                return False, f"Nu pot suprascrie fisierul scan anterior: {e}"
+
+        try:
+            shutil.copy2(self._cale_pasiv_original, cale_scan)
+        except OSError as e:
             return False, f"Nu pot copia baza: {e}"
 
-        self._pasiv_scan_tmp = tmp
-        mdb = ManagerBazaDate(tmp, read_only=False)
+        self._cale_scan_db = cale_scan
+        mdb = ManagerBazaDate(cale_scan, read_only=False)
         ref_ts = mdb.get_max_packet_timestamp()
         if ref_ts is None:
+            mdb.inchide_toate_conexiunile()
             try:
-                os.unlink(tmp)
+                os.unlink(cale_scan)
             except OSError:
                 pass
-            self._pasiv_scan_tmp = None
+            self._cale_scan_db = None
             return False, "Nu exista pachete in captura."
 
         geo_dir = os.path.join(_IMPORT_DIR, "geoip")
@@ -139,17 +151,23 @@ class AppState:
             enrichment=enrich,
             reguli_db=self.db_live,
         )
+
+        for row in self.db_live.get_config_detectori():
+            mdb.update_config_detector(row["detector"], row["param"], row["valoare"])
         try:
             mgr.ruleaza_o_data(reference_time=ref_ts)
         except Exception as e:
             print(f"[STATE] Eroare scan pasiv: {e}")
+            mdb.inchide_toate_conexiunile()
             try:
-                os.unlink(tmp)
+                os.unlink(cale_scan)
             except OSError:
                 pass
-            self._pasiv_scan_tmp = None
+            self._cale_scan_db = None
             return False, f"Eroare la scanare: {e}"
 
+        if self.db_pasiv is not None:
+            self.db_pasiv.inchide_conexiune()
         self.db_pasiv = mdb
         self.mod = "pasiv"
         return True, "✓ Scan complet (reguli built-in + custom din DB live)."
@@ -227,6 +245,10 @@ class AppState:
                 print(f"[STATE] Eroare antrenare ML: {e}")
                 self.ml_status = "ready"
                 self.ml_msg    = f"✗ Eroare antrenare: {e}"
+            
+            finally:
+                if cale_db_extern and db_src is not self.db_live:
+                    db_src.inchide_toate_conexiunile()
 
         self._ml_thread = threading.Thread(target=_run, daemon=True,
                                            name="ml-training")
@@ -260,3 +282,20 @@ class AppState:
         stare = "ACTIVA" if self.detectie_ml_activa else "INACTIVA"
         print(f"[STATE] Detectie ML: {stare}")
         return self.detectie_ml_activa
+    
+        
+    def inchide_toate_conexiunile(self):
+        if self.db_live:
+            self.db_live.inchide_toate_conexiunile()
+        if self.db_pasiv and self.db_pasiv is not self.db_live:
+            self.db_pasiv.inchide_toate_conexiunile()
+        for mgr in self.manageri_interfete.values():
+            try:
+                mgr.inchide_conexiune()
+            except Exception:
+                pass
+        if self._cale_scan_db and os.path.isfile(self._cale_scan_db):
+            try:
+                os.unlink(self._cale_scan_db)
+            except OSError:
+                pass

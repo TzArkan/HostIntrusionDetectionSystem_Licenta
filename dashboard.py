@@ -326,9 +326,8 @@ class DashboardRetea:
         def render_nav(sectiune, mod, _, last_ts):
             alerte_noi = 0
             try:
-                if mod == "pasiv" or sectiune != "alerte":
-                    alerte_noi = self.state.db.count_alerte(
-                        ts_start=last_ts if last_ts else 0, vazut=False)
+                alerte_noi = self.state.db_live.count_alerte(
+                    ts_start=last_ts if last_ts else 0, vazut=False)
             except Exception as e:
                 alerte_noi = 0
             

@@ -17,7 +17,7 @@ DETECTORI_META = {
     "Port Scan": {
         "descriere": (
             "Detecteaza un IP care incearca sa descopere servicii active "
-            "pe retea prin conectarea rapida la multe porturi diferite. "
+            "pe retea prin conectarea la multe porturi diferite. "
             "Tehnica comuna in faza de recunoastere a unui atac."
         ),
         "params": {
@@ -51,7 +51,7 @@ DETECTORI_META = {
     "DNS Amplification": {
         "descriere": (
             "Atac DDoS prin reflexie: atacatorul trimite cereri DNS mici catre "
-            "servere publice (spoofand IP-ul victimei), care raspund cu mesaje "
+            "servere publice, care raspund cu mesaje "
             "mult mai mari, amplificand traficul catre tinta."
         ),
         "params": {
@@ -62,17 +62,14 @@ DETECTORI_META = {
     },
     "Data Exfiltration": {
         "descriere": (
-            "Beaconing catre un IP exterior: volum mare + multe octeti si un ritm intre pachete lent in mediu "
-            "si foarte regulat (nu rafala de browser/CDN). Prag_med_min filtreaza fluxurile cu interval mediu "
-            "aproape zero. Alerta daca deviatia intervalelor (std) e sub prag_std — prag_std mic ⇒ doar ritm "
-            "aproape perfect periodic."
+            "Trimitere de date catre un IP exterior: volum mare + multi octeti si un ritm intre pachete lent. "
         ),
         "params": {
             "prag_pachete": "Minim pachete spre acel IP (implicit foarte mare)",
-            "prag_std": ("Deviatie std a gap-urilor (s); alerta doar daca std < prag "
+            "prag_std": ("Deviatie std a intervalelor (s); alerta doar daca std < prag "
                          "(mai mic ⇒ doar puls extrem de regulat)"),
-            "prag_bytes":   "Bytes minim catre IP in fereastra (~8 MiB implicit)",
-            "prag_med_min": "Interval mediu min. intre pachete catre tinta (s); sub → ignora (rafala)",
+            "prag_bytes":   "Bytes minimi catre IP in fereastra (~8 MiB implicit)",
+            "prag_med_min": "Interval mediu min. intre pachete catre tinta (s); sub → ignora",
             "fereastra":    "Fereastra de timp (secunde)",
         },
     },
@@ -83,7 +80,7 @@ DETECTORI_META = {
             "Poate fi folosit si pentru recunoasterea retelei."
         ),
         "params": {
-            "prag":      "Pachete ICMP de la acelasi IP sursa (declansare)",
+            "prag":      "Pachete ICMP de la acelasi IP sursa",
             "fereastra": "Fereastra de timp analizata (secunde)",
         },
     },
@@ -91,10 +88,10 @@ DETECTORI_META = {
         "descriere": (
             "Model Isolation Forest antrenat pe trafic normal. Detecteaza "
             "comportamente statistice anormale fara reguli predefinite — "
-            "util pentru atacuri noi sau necunoscute (zero-day)."
+            "util pentru atacuri noi sau abateri de la utilizarea normala a retelei."
         ),
         "params": {
-            "fereastra": "Fereastra de agregare features (secunde)",
+            "fereastra": "Fereastra de timp analizata (secunde)",
         },
     },
 }
@@ -158,9 +155,9 @@ class SectiuneSetari:
                     ], style={"marginBottom": "10px"}),
 
                     html.P(
-                        "Antreneaza modelul Isolation Forest pe date istorice "
+                        "Antreneaza modelul Isolation Forest pe date externe "
                         "de trafic normal. Modelul va detecta automat "
-                        "comportamente anormale (zero-day) fara reguli fixe.",
+                        "comportamente anormale ",
                         style={"color": MUTED, "fontSize": "12px",
                                "margin": "0 0 14px 0", "lineHeight": "1.6"}),
 
@@ -494,10 +491,21 @@ class SectiuneSetari:
             Output(f"{p}-ml-status-badge", "style"),
             Input(f"{p}-ml-interval",   "n_intervals"),
             Input(f"{p}-ml-act-store",  "data"),
+        Input(f"{p}-ml-sursa",        "value"),    
+            Input(f"{p}-ml-extern-store", "data"),    
         )
-        def refresh_ml_ui(_, _act):
-            status           = self.state.ml_status
-            date_ok, date_msg = self.state.are_date_suficiente_ml()
+        def refresh_ml_ui(_, _act, sursa, cale_extern):
+            status = self.state.ml_status
+            
+            if sursa == "extern":
+                if cale_extern:
+                    date_ok = True
+                    date_msg = f"Sursa externa pregatita: {os.path.basename(cale_extern)}"
+                else:
+                    date_ok = False
+                    date_msg = "Selecteaza mai intai un fisier .db extern."
+            else:
+                date_ok, date_msg = self.state.are_date_suficiente_ml()
 
             STATUS_MAP = {
                 "ready":    ("● Niciun model",    "#475569", "#1e293b"),
@@ -1033,7 +1041,11 @@ class SectiuneSetari:
             ctx = dash.callback_context
             if not ctx.triggered:
                 raise PreventUpdate
-                
+            
+            valoare_click = ctx.triggered[0]["value"]
+            if not valoare_click:
+                raise PreventUpdate
+            
             trigger_id = ctx.triggered[0]["prop_id"]
             msg = ""
             nou_ctr = (ctr or 0)

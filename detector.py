@@ -30,7 +30,7 @@ class DetectorAtac:
     def _now(self):
         return self._reference_time if self._reference_time is not None else time.time()
 
-    def analizeaza(self, fereastra_secunde=60):
+    def analizeaza(self, fereastra_secunde=10):
         raise NotImplementedError
 
     def _emite_alerta(self, src_ip=None, dst_ip=None, detalii="",
@@ -143,9 +143,9 @@ sudo nmap -sS 192.168.1.129 -p 1-1000 --min-rate 200
 class DetectorPortScan(DetectorAtac):
     NUME = "Port Scan"; SEVERITATE = "RIDICATA"
 
-    def analizeaza(self, fereastra_secunde=60):
+    def analizeaza(self, fereastra_secunde=10):
         prag = int(self.db.get_config_detector("Port Scan", "prag", 20))
-        fw   = int(self.db.get_config_detector("Port Scan", "fereastra", 60))
+        fw   = int(self.db.get_config_detector("Port Scan", "fereastra", 10))
 
         excl_sql, excl_p = self._excl_src()
         cur = self.db._get_conexiune().cursor()
@@ -171,7 +171,7 @@ class DetectorPortScan(DetectorAtac):
 '''
 # 1000 pachete, cate unul la 10ms — suficient pentru a declansa alerta (prag 100/60s)
 sudo hping3 -S -c 500 -i u10000 -p 80 192.168.56.1
-u10000 = 10.000 microsecunde = 10ms intre pachete. 1000 pachete in ~10 secunde — declanseaza alerta fara sa blochezi calculatorul.
+u10000 = 10.000 microsecunde = 10ms intre pachete. 1000 pachete in ~10 secunde
 '''
 class DetectorSYNFlood(DetectorAtac):
     NUME = "SYN Flood"; SEVERITATE = "CRITICA"
@@ -179,9 +179,9 @@ class DetectorSYNFlood(DetectorAtac):
     def analizeaza(self, fereastra_secunde=10):
         prag_syn_ddos = int(self.db.get_config_detector("DDoS SYN Flood", "prag_syn", 200))
         prag_surse    = int(self.db.get_config_detector("DDoS SYN Flood", "prag_surse", 2))
-        fw_ddos       = int(self.db.get_config_detector("DDoS SYN Flood", "fereastra", 60))
+        fw_ddos       = int(self.db.get_config_detector("DDoS SYN Flood", "fereastra", 10))
         prag_syn_dos  = int(self.db.get_config_detector("DoS SYN Flood", "prag_syn", 300))
-        fw_dos        = int(self.db.get_config_detector("DoS SYN Flood", "fereastra", 60))
+        fw_dos        = int(self.db.get_config_detector("DoS SYN Flood", "fereastra", 10))
         fw            = max(fw_ddos, fw_dos)
 
         excl_sql, excl_p = self._excl_src()
@@ -223,16 +223,29 @@ class DetectorSYNFlood(DetectorAtac):
                     protocol="TCP",
                     tip_atac="DDoS SYN Flood")
                     
-            elif r["u"] == 1 and r["s"] >= prag_syn_dos:
-                self._emite_alerta(
-                    src_ip=r["src_unica"],
-                    dst_ip=r["dst_ip"],
-                    detalii=f"{r['s']} pachete SYN catre portul {r['dst_port']} "
-                            f"de la o singura sursa in {fw_dos}s",
-                    dst_port=r["dst_port"],
-                    protocol="TCP",
-                    tip_atac="DoS SYN Flood")
         cur.close()
+        cur2 = self.db._get_conexiune().cursor()
+        cur2.execute(f"""
+            SELECT src_ip, dst_ip, dst_port, COUNT(*) AS s
+            FROM packets
+            WHERE timestamp >= ?
+            AND protocol = 'TCP'
+            AND tcp_flags = 'S'
+            {excl_sql}
+            GROUP BY src_ip, dst_ip, dst_port
+            HAVING s > ?
+        """, [self._ts(fw_dos)] + excl_p + [prag_syn_dos])
+
+        for r in cur2.fetchall():
+            self._emite_alerta(
+                src_ip=r["src_ip"],
+                dst_ip=r["dst_ip"],
+                detalii=f"{r['s']} pachete SYN catre portul {r['dst_port']} "
+                        f"de la o singura sursa in {fw_dos}s",
+                dst_port=r["dst_port"],
+                protocol="TCP",
+                tip_atac="DoS SYN Flood")
+        cur2.close()
 
 
 '''
@@ -245,7 +258,7 @@ class DetectorBruteForce(DetectorAtac):
 
     def analizeaza(self, fereastra_secunde=10):
         prag = int(self.db.get_config_detector("Brute Force", "prag",      10))
-        fw   = int(self.db.get_config_detector("Brute Force", "fereastra", 60))
+        fw   = int(self.db.get_config_detector("Brute Force", "fereastra", 10))
 
         porturi = list(self.PORTURI.keys())
         ph      = ",".join("?" * len(porturi))
@@ -282,13 +295,13 @@ class DetectorDNSAmplification(DetectorAtac):
     """Raspunsuri DNS de >prag_ratio mai mari decat cererile -> DDoS reflectat."""
     NUME = "DNS Amplification"; SEVERITATE = "RIDICATA"
 
-    def analizeaza(self, fereastra_secunde=60):
+    def analizeaza(self, fereastra_secunde=10):
         prag_ratio = float(self.db.get_config_detector(
             "DNS Amplification", "prag_ratio",  5.0))
         prag_volum = int(self.db.get_config_detector(
             "DNS Amplification", "prag_volum",   50))
         fw         = int(self.db.get_config_detector(
-            "DNS Amplification", "fereastra",    60))
+            "DNS Amplification", "fereastra",    10))
 
         excl_sql, excl_p = self._excl_src()
         cur = self.db._get_conexiune().cursor()
@@ -325,11 +338,11 @@ class DetectorExfiltrare(DetectorAtac):
 
     _MIN_ESTABILIRE_STD = 24
 
-    def analizeaza(self, fereastra_secunde=60):
-        prag_p       = 30       # Minim 30 de pachete
+    def analizeaza(self, fereastra_secunde=10):
+        prag_p       = 200      # Minim 30 de pachete
         prag_std     = 0.5      # Permitem o deviatie standard de max 0.5s (ping-ul are ~0.05s)
-        prag_b       = 1000     # Minim 1000 bytes in total
-        fw           = 120      # Cautam in ultimele 120 de secunde
+        prag_b       = 5000     # Minim 1000 bytes in total
+        fw           = 20       # Cautam in ultimele 120 de secunde
         prag_med_min = 0.1      # Scazut la 0.1s ca sa nu blocheze ping-ul de 1 secunda
 
         excl_dst_sql, excl_dst_p = self._excl_dst()
@@ -384,9 +397,9 @@ sudo hping3 --icmp -c 1000 -i u10000 192.168.56.1
 class DetectorICMPFlood(DetectorAtac):
     NUME = "ICMP Flood"; SEVERITATE = "MEDIE"
 
-    def analizeaza(self, fereastra_secunde=60):
+    def analizeaza(self, fereastra_secunde=10):
         prag = int(self.db.get_config_detector("ICMP Flood", "prag",      100))
-        fw   = int(self.db.get_config_detector("ICMP Flood", "fereastra",  60))
+        fw   = int(self.db.get_config_detector("ICMP Flood", "fereastra",  10))
 
         excl_sql, excl_p = self._excl_src()
         cur = self.db._get_conexiune().cursor()
@@ -418,7 +431,7 @@ class DetectorDinamic(DetectorAtac):
         super().__init__(db, backup, sursa, ip_gazda, enrichment)
         self.reguli_db = reguli_db if reguli_db is not None else db
 
-    def analizeaza(self, fereastra_secunde=60):
+    def analizeaza(self, fereastra_secunde=10):
         for reg in self.reguli_db.get_reguli_active():
             self._aplica_regula(reg)
 

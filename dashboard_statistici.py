@@ -1,6 +1,7 @@
 from datetime import datetime
 from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output
+from dash.exceptions import PreventUpdate
 import plotly.graph_objects as go
 
 from dashboard_utils import (
@@ -57,7 +58,7 @@ class SectiuneStatistici:
             html.Div([
                 card([
                     sectiune_titlu(
-                        "Pachete/secunda per IP sursa (ultimele 5 minute)"),
+                        "Pachete (ultimele 5 minute)"),
                     dcc.Graph(id=f"{p}-graf-ip",
                               style={"height": "260px"},
                               config={"displayModeBar": False}),
@@ -74,9 +75,9 @@ class SectiuneStatistici:
 
             card([
                 sectiune_titlu(
-                    f"Statistici per IP (IP gazda exclus: {self.ip_gazda})"),
+                    f"Statistici per IP"),
                 html.P(
-                    "Agregat dupa aceeasi sursa ca graficele (filtru interfata de mai sus).",
+                    "",
                     style={"fontSize": "11px", "color": MUTED, "margin": "0 0 10px 0"},
                 ),
                 dash_table.DataTable(
@@ -101,7 +102,7 @@ class SectiuneStatistici:
 
     def _sursa_grafice(self, interfata_val):
         if not interfata_val or interfata_val == "all":
-            return self.state.db
+            return self.state.db_live 
         return self.state.get_manager_interfata(interfata_val)
 
     def register_callbacks(self, app):
@@ -118,6 +119,8 @@ class SectiuneStatistici:
             Input(f"{p}-graf-interfata", "value"),
         )
         def actualizeaza(_, interfata_val):
+            if self.P == "lst" and self.state.mod == "pasiv":
+                raise PreventUpdate
 
             optiuni_iface = [{"label": "Toate", "value": "all"}]
             if self.state.interfete_active:
@@ -128,7 +131,7 @@ class SectiuneStatistici:
 
             sursa = self._sursa_grafice(interfata_val)
 
-            st = self.state.db.get_statistici_alerte()
+            st = self.state.db_live.get_statistici_alerte()
             nivel_ridicat = st.get("critica", 0) + st.get("ridicata", 0)
             kpi_alerte = [
                 self._kpi(st.get("total", 0),
@@ -141,8 +144,8 @@ class SectiuneStatistici:
                           "Nivel Mediu", "#fb923c"),
             ]
 
-            pps_60  = self.state.db.get_avg_pachete_per_secunda(60)
-            pps_300 = self.state.db.get_avg_pachete_per_secunda(300)
+            pps_60  = self.state.db_live.get_avg_pachete_per_secunda(60)
+            pps_300 = self.state.db_live.get_avg_pachete_per_secunda(300)
             kpi_pps = [
                 self._kpi(f"{pps_60:.1f}",
                           "Pkt/s (ultimul minut)", "#7dd3fc"),
@@ -172,12 +175,14 @@ class SectiuneStatistici:
                 for i, ip in enumerate(top_ip):
                     xs = [r["ts_bucket"] for r in rows_ip if r["src_ip"] == ip]
                     ys = [r["cnt"]       for r in rows_ip if r["src_ip"] == ip]
-                    xf = [datetime.fromtimestamp(x).strftime("%H:%M:%S") for x in xs]
+                    xf = [datetime.fromtimestamp(x) for x in xs]
+                    
                     fig_ip.add_trace(go.Scatter(
                         x=xf, y=ys, name=ip, mode="lines",
                         line=dict(color=palette[i % len(palette)], width=2)))
 
             fig_ip.update_layout(**PLOTLY_LAYOUT, yaxis_title="pachete / 10s")
+            fig_ip.update_xaxes(tickformat="%H:%M:%S")
 
             fig_pr = go.Figure()
             if rows_pr:
@@ -185,13 +190,16 @@ class SectiuneStatistici:
                 for proto in protocoale:
                     xs = [r["ts_bucket"] for r in rows_pr if r["protocol"] == proto]
                     ys = [r["cnt"]       for r in rows_pr if r["protocol"] == proto]
-                    xf = [datetime.fromtimestamp(x).strftime("%H:%M:%S") for x in xs]
+                    
+                    xf = [datetime.fromtimestamp(x) for x in xs]
+                    
                     fig_pr.add_trace(go.Bar(
                         x=xf, y=ys, name=proto,
                         marker_color=PROTO_CULORI.get(proto, "#94a3b8")))
                 fig_pr.update_layout(barmode="stack")
 
             fig_pr.update_layout(**PLOTLY_LAYOUT, yaxis_title="pachete / 10s")
+            fig_pr.update_xaxes(tickformat="%H:%M:%S")
 
             rows_stats = []
             if sursa is not None:

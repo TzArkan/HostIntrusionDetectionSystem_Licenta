@@ -34,7 +34,7 @@ class DetectorAnomalii(DetectorAtac):
 
     def _extrage_features(self, ts_start, ts_end, db=None):
         db = db or self.db
-        f  = db.get_features_fereastra(ts_start, ts_end)
+        f = db.get_features_fereastra(ts_start, ts_end, ip_gazda=self.ip_gazda)
         if not f or f.get("total_pachete", 0) == 0:
             return None
         total = max(f["total_pachete"], 1)
@@ -56,9 +56,17 @@ class DetectorAnomalii(DetectorAtac):
             return False
 
         db = db_override or self.db
-        print(f"[ML] Inceput antrenare baseline pe {ore}h de date...")
-        ts_end   = time.time()
-        ts_start = ts_end - ore * 3600
+        
+        max_ts_db = db.get_max_packet_timestamp()
+        
+        if max_ts_db is None:
+            ts_end = time.time()
+        else:
+            ts_end = max_ts_db
+            
+        ts_start = ts_end - (ore * 3600)
+
+        print(f"[ML] Inceput antrenare pe {ore}h. Interval de calcul: {ts_start} -> {ts_end}")
 
         X = []
         t = ts_start
@@ -117,7 +125,7 @@ class DetectorAnomalii(DetectorAtac):
             feature_suspect = nume_features[idx_max]
 
             self.SEVERITATE = "RIDICATA" if scor > 0.3 else "MEDIE"
-            self._emite_alerta(
+            self._emite_alerta(src_ip=self.ip_gazda,
                 detalii=(f"Anomalie ML detectata (scor={scor:.3f}). "
                          f"Feature deviat: {feature_suspect}="
                          f"{features[idx_max]:.1f}. "

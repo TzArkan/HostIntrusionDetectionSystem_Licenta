@@ -247,6 +247,9 @@ class SectiuneTrafic:
             prevent_initial_call=False,
         )
         def render_iface_bar(_, clicks):
+            if self.P == "pt": 
+                return html.Div(), None
+                
             import json
             from dash import callback_context
             manageri = self.state.manageri_interfete
@@ -374,12 +377,19 @@ class SectiuneTrafic:
             ctx = dash.callback_context
             trig = ctx.triggered[0]["prop_id"] if ctx.triggered else ""
             
-            if f"{p}-interval" in trig and freeze:
-                raise PreventUpdate
+            if f"{p}-interval" in trig:
+                if self.P == "lt" and self.state.mod == "pasiv":
+                    raise PreventUpdate
+                if self.P == "pt" and self.state.mod == "live":
+                    raise PreventUpdate
+                if bool(manual_pause) or (ts_min is not None and ts_max is not None):
+                    raise PreventUpdate
 
             este_filtru = "applied-filters" in trig or "manual-pause" in trig or f"{p}-iface-sel" in trig
 
-            mgr = self.state.get_manager_interfata(iface_sel)
+            mgr = None
+            if self.P != "pt": 
+                mgr = self.state.get_manager_interfata(iface_sel)
 
             def _fetch(min_id_val=None):
                 kw = dict(
@@ -393,7 +403,11 @@ class SectiuneTrafic:
                 )
                 if mgr:
                     return mgr.get_pachete_filtrate(**kw)
-                return self.state.db.get_pachete_filtrate(**kw)
+                
+                db_sursa = self.state.db_pasiv if self.P == "pt" else self.state.db_live
+                if not db_sursa:
+                    return []
+                return db_sursa.get_pachete_filtrate(**kw)
 
             hint = ""
             if time_window:
@@ -403,8 +417,11 @@ class SectiuneTrafic:
 
             if este_filtru or last_id is None or time_window or ("manual-pause" in trig):
                 pachete = _fetch()
-                rows = [_format_pachet(pk) for pk in reversed(pachete)]
-                new_id = rows[-1]["id"] if rows else None
+                
+                rows = [_format_pachet(pk) for pk in pachete]
+                
+                new_id = rows[0]["id"] if rows else None
+                
                 if time_window:
                     cnt = f"{len(rows)} pachete (interval)"
                 elif manual_pause and "manual-pause" in trig:
@@ -420,6 +437,8 @@ class SectiuneTrafic:
             new_rows = [_format_pachet(pk) for pk in pachete_noi]
             new_id = new_rows[-1]["id"]
             patched = Patch()
-            for row in reversed(new_rows):
+            
+            for row in new_rows:
                 patched.prepend(row)
+                
             return (patched, f"+{len(new_rows)} pachete noi", new_id, "", hint)

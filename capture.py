@@ -44,6 +44,9 @@ class AnalistPachete:
             ipaddress.ip_network("192.168.0.0/16"),
             ipaddress.ip_network("127.0.0.0/8"),
             ipaddress.ip_network("169.254.0.0/16"),
+            ipaddress.ip_network("100.64.0.0/10"),
+            ipaddress.ip_network("224.0.0.0/4"),
+            ipaddress.ip_network("255.255.255.255/32"),
         ]
 
     def _este_privata(self, ip_string):
@@ -103,6 +106,13 @@ class AnalistPachete:
 
         src_ip    = pachet[IP].src
         dst_ip    = pachet[IP].dst
+        
+        if dst_ip.startswith("224.") or dst_ip == "255.255.255.255" or dst_ip.endswith(".255"):
+            return
+        
+        if src_ip == dst_ip:
+            return
+        
         protocol  = "OTHER"
         src_port  = "-"
         dst_port  = "-"

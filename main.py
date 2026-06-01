@@ -142,8 +142,10 @@ class AplicatieMonitorRetea:
             self.analist.stop()
             self.detector.stop()
             self.fim.stop()
+            
             if self._capture_thread and self._capture_thread.is_alive():
                 self._capture_thread.join(timeout=3)
+            self.state.inchide_toate_conexiunile()    
             print("7. Aplicatie inchisa.")
 
 

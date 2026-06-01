@@ -133,6 +133,19 @@ class ManagerSesiuneInterfata:
                 self._pending     = 0
                 self._last_commit = time.time()
 
+    def inchide_conexiune(self):
+        self.flush()
+        with self._lock:
+            if self._con is not None:
+                try:
+                    self._con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    self._con.execute("PRAGMA journal_mode=DELETE")
+                    self._con.close()
+                except Exception:
+                    pass
+                finally:
+                    self._con = None
+        print(f"[DB-{self.iface_safe}] Conexiune inchisa.")
 
     def get_pachete_filtrate(self, src_ip=None, dst_ip=None,
                               src_port=None, dst_port=None,
