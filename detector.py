@@ -12,8 +12,6 @@ from enrichment import EnrichmentService
 
 class DetectorAtac:
     NUME = "Generic"; SEVERITATE = "MEDIE"
-    _SUPRESIE_GLOBALA = {}
-    _LOCK_SUPRESIE = threading.Lock()
 
     def __init__(self, db, backup=None, sursa="live", ip_gazda=None, enrichment=None):
         self.db       = db
@@ -24,17 +22,10 @@ class DetectorAtac:
         self._reference_time = None
         self._ultimele_alerte = {} 
 
-    def set_reference_time(self, ts):
-        self._reference_time = float(ts) if ts is not None else None
-
-    def _now(self):
-        return self._reference_time if self._reference_time is not None else time.time()
-
     def analizeaza(self, fereastra_secunde=10):
         raise NotImplementedError
 
-    def _emite_alerta(self, src_ip=None, dst_ip=None, detalii="",
-                      src_port=None, dst_port=None, protocol=None, tip_atac=None):
+    def _emite_alerta(self, src_ip=None, dst_ip=None, detalii="", src_port=None, dst_port=None, protocol=None, tip_atac=None):
         src_ip, dst_ip = self._completeaza_ip_uri(
             src_ip=src_ip,
             dst_ip=dst_ip,
@@ -49,12 +40,11 @@ class DetectorAtac:
         timp_curent = self._now()
         cooldown = 180
 
-        with self._LOCK_SUPRESIE:
-            ts_flux = self._SUPRESIE_GLOBALA.get(cheie_alerta)
-            if ts_flux and (timp_curent - ts_flux) < cooldown:
-                return
-            self._SUPRESIE_GLOBALA[cheie_alerta] = timp_curent
-            self._ultimele_alerte[cheie_alerta] = timp_curent
+        ts_flux = self._supresie_alerte.get(cheie_alerta)
+        if ts_flux and (timp_curent - ts_flux) < cooldown:
+            return  
+        
+        self._supresie_alerte[cheie_alerta] = timp_curent
 
         context = {}
         if self.enrichment is not None:
@@ -85,6 +75,12 @@ class DetectorAtac:
         print(f"[ALERTA] [{self.SEVERITATE}] {tip_emitere} "
               f"| src={src_ip} | {detalii}")
 
+    def set_reference_time(self, ts):
+        self._reference_time = float(ts) if ts is not None else None
+
+    def _now(self):
+        return self._reference_time if self._reference_time is not None else time.time()
+    
     def _ts(self, f):
         return self._now() - f
 
@@ -186,7 +182,6 @@ class DetectorSYNFlood(DetectorAtac):
 
         excl_sql, excl_p = self._excl_src()
         cur = self.db._get_conexiune().cursor()
-
         cur.execute(f"""
             SELECT dst_ip, dst_port,
                    COUNT(*) AS s,
@@ -292,7 +287,6 @@ done
 wait
 '''
 class DetectorDNSAmplification(DetectorAtac):
-    """Raspunsuri DNS de >prag_ratio mai mari decat cererile -> DDoS reflectat."""
     NUME = "DNS Amplification"; SEVERITATE = "RIDICATA"
 
     def analizeaza(self, fereastra_secunde=10):
@@ -302,6 +296,8 @@ class DetectorDNSAmplification(DetectorAtac):
             "DNS Amplification", "prag_volum",   50))
         fw         = int(self.db.get_config_detector(
             "DNS Amplification", "fereastra",    10))
+            
+        prag_marime_periculoasa = 1000 
 
         excl_sql, excl_p = self._excl_src()
         cur = self.db._get_conexiune().cursor()
@@ -309,21 +305,44 @@ class DetectorDNSAmplification(DetectorAtac):
             SELECT
                 AVG(CASE WHEN dst_port = '53' THEN packet_len END) AS mc,
                 AVG(CASE WHEN src_port = '53' THEN packet_len END) AS mr,
-                COUNT(CASE WHEN src_port = '53' THEN 1 END) AS nr
+                COUNT(CASE WHEN src_port = '53' THEN 1 END) AS nr,
+                COUNT(CASE WHEN dst_port = '53' THEN 1 END) AS nc  
             FROM packets
             WHERE timestamp >= ?
               AND protocol = 'UDP'
               AND (src_port = '53' OR dst_port = '53')
               {excl_sql}
         """, [self._ts(fw)] + excl_p)
-        r = cur.fetchone(); cur.close()
-        if not r or not r["mc"] or not r["mr"]:
+        
+        r = cur.fetchone()
+        cur.close()
+
+        if not r or not r["mr"] or not r["nr"]:
             return
-        ratio = r["mr"] / r["mc"]
-        if ratio > prag_ratio and r["nr"] > prag_volum:
-            self._emite_alerta(
-                detalii=f"Amplificare DNS {ratio:.1f}x "
-                        f"({r['nr']} raspunsuri in {fw}s)")
+
+        nr = r["nr"]
+        nc = r["nc"]
+
+        if nc == 0:
+            if nr > prag_volum and r["mr"] > prag_marime_periculoasa:
+                self._emite_alerta(
+                    detalii=f"Atac Reflectat Pur: {nr} raspunsuri primite "
+                            f"(medie {r['mr']:.0f} bytes) fara a trimite vreo cerere in {fw}s.",
+                    protocol="UDP"
+                )
+            return
+
+        ratio_dimensiune = r["mr"] / r["mc"]
+        
+        ratio_numere = nr / nc
+
+        if (ratio_dimensiune > prag_ratio) or (ratio_numere > 5.0):
+            if nr > prag_volum:
+                self._emite_alerta(
+                    detalii=f"Anomalie DNS detectată: "
+                            f"{nr} raspunsuri pt {nc} cereri (Raport de volum: {ratio_dimensiune:.1f}x) in {fw}s.",
+                    protocol="UDP"
+                )
 
 '''
 # Script cu intervale regulate de ~5s - std mic = detectat ca beaconing
@@ -403,7 +422,6 @@ class DetectorICMPFlood(DetectorAtac):
 
         excl_sql, excl_p = self._excl_src()
         cur = self.db._get_conexiune().cursor()
-        
         cur.execute(f"""
             SELECT src_ip, dst_ip, COUNT(*) AS n
             FROM packets
@@ -495,6 +513,16 @@ class ManagerDetectie:
             DetectorICMPFlood(**args),
             DetectorDinamic(**args, reguli_db=reguli_db or db),
         ]
+        def ruleaza_o_data(self, reference_time=None):
+            if reference_time is not None:
+                self.set_reference_time(reference_time)
+            print(f"[DETECTIE] Analiza ({len(self.detectoare)} detectori)...")
+            for d in self.detectoare:
+                try:
+                    d.analizeaza()
+                except Exception as e:
+                    print(f"[DETECTIE] Eroare {d.__class__.__name__}: {e}")
+                    
 
     def set_reference_time(self, ts):
         for d in self.detectoare:
@@ -508,15 +536,7 @@ class ManagerDetectie:
             d.enrichment = self.enrichment
         self.detectoare.append(d)
 
-    def ruleaza_o_data(self, reference_time=None):
-        if reference_time is not None:
-            self.set_reference_time(reference_time)
-        print(f"[DETECTIE] Analiza ({len(self.detectoare)} detectori)...")
-        for d in self.detectoare:
-            try:
-                d.analizeaza()
-            except Exception as e:
-                print(f"[DETECTIE] Eroare {d.__class__.__name__}: {e}")
+    
 
     def start(self):
         self._activ  = True

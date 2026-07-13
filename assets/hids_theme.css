@@ -1,4 +1,4 @@
-/* Fundal consistent la scroll / overscroll — evită banda albă sus/jos */
+
 html,
 body {
   margin: 0;
@@ -20,7 +20,6 @@ body {
   min-height: 100vh;
 }
 
-/* Scrollbar în ton cu tema */
 * {
   scrollbar-width: thin;
   scrollbar-color: #334155 #0f172a;
@@ -45,13 +44,11 @@ body {
   background: #475569;
 }
 
-/* Input invalid (după blur) */
 input.hids-invalid {
   border-color: #92400e !important;
   box-shadow: 0 0 0 2px rgba(146, 64, 14, 0.25);
 }
 
-/* Wrapper relativ pentru popup */
 .hids-input-grup {
   position: relative;
   display: inline-block;

@@ -17,8 +17,6 @@ try:
     import geoip2.database
 except Exception: 
     geoip2 = None
-else:
-    geoip2 = geoip2
 
 
 class TTLCache:

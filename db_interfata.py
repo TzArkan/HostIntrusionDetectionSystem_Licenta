@@ -23,8 +23,8 @@ _SCHEMA_PACKETS = """
     CREATE INDEX IF NOT EXISTS idx_dst ON packets(dst_ip);
 """
 
-_BATCH_SIZE = 200
-_BATCH_MS   = 500
+_DIMENSIUNE_CALUP = 200
+_TIMP_CALUP   = 500
 
 
 def sanitize_iface_name(name: str) -> str:
@@ -44,8 +44,8 @@ class ManagerSesiuneInterfata:
         self.cale_sesiune = os.path.join(self.folder, "sesiune_curenta.db")
         self._lock        = threading.Lock()
         self._con         = None
-        self._pending     = 0
-        self._last_commit = time.time()
+        self._contor     = 0
+        self._ultimul_commit = time.time()
         self._initializeaza()
 
     def _get_con(self) -> sqlite3.Connection:
@@ -102,8 +102,8 @@ class ManagerSesiuneInterfata:
             self._arhiveaza_sesiune()
             self._get_con().execute("DELETE FROM packets")
             self._get_con().commit()
-            self._pending     = 0
-            self._last_commit = time.time()
+            self._contor     = 0
+            self._ultimul_commit = time.time()
         print(f"[DB-{self.iface_safe}] Sesiune curatata.")
 
 
@@ -118,20 +118,20 @@ class ManagerSesiuneInterfata:
                 VALUES (?,?,?,?,?,?,?,?)
             """, (timestamp, src_ip, dst_ip, src_port, dst_port,
                   protocol, packet_len, tcp_flags))
-            self._pending += 1
+            self._contor += 1
             now = time.time()
-            if (self._pending >= _BATCH_SIZE or
-                    (now - self._last_commit) * 1000 >= _BATCH_MS):
+            if (self._contor >= _DIMENSIUNE_CALUP or
+                 (now - self._ultimul_commit) * 1000 >= _TIMP_CALUP):
                 self._get_con().commit()
-                self._pending     = 0
-                self._last_commit = now
+                self._contor     = 0
+                self._ultimul_commit = now
 
     def flush(self):
         with self._lock:
-            if self._pending > 0:
+            if self._contor > 0:
                 self._get_con().commit()
-                self._pending     = 0
-                self._last_commit = time.time()
+                self._contor     = 0
+                self._ultimul_commit = time.time()
 
     def inchide_conexiune(self):
         self.flush()
@@ -255,7 +255,7 @@ class ManagerSesiuneInterfata:
         return rows
 
     def get_ip_uri_corespondente(self, ip_gazda, limit=200):
-        con = self._get_conexiune()
+        con = self._get_con()
         cur = con.cursor()
         cur.execute(f"""
             SELECT DISTINCT ip FROM (

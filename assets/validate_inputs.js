@@ -1,4 +1,4 @@
-/* validate_inputs.js - Sticky Errors + Curatenie la navigare intre sectiuni */
+
 
 (function () {
     var REGEX_DOAR_IP    = /[^0-9.]/g;
@@ -20,7 +20,7 @@
         { suffix: "f-ts-end",   filtru: REGEX_TS,       valid: /^(\d{4}-\d{2}-\d{2} )?\d{2}:\d{2}(:\d{2})?$/, eroare: "Format: YYYY-MM-DD HH:MM:SS" },
         { suffix: "r-port",   filtru: REGEX_DOAR_CIFRE, valid: /^\d{1,5}$/,                eroare: "Port: cifre 1-65535" },
         { suffix: "r-flags",  filtru: /[^SAFRPUsafrpu]/g, valid: /^[SsAaFfRrPpUu]+$/,     eroare: "Flags permise: S A F R P U" },
-        { suffix: "fim-cale", filtru: null,             valid: /^([A-Za-z]:\\|\/)/,        eroare: "Cale completă: ex. C:\\Windows\\..." },
+        { suffix: "fim-cale", filtru: null,             valid: /^([A-Za-z]:\\|\/)/,        eroare: "Cale completa: ex. C:\\Windows\\..." },
         { suffix: "f-portscan", filtru: REGEX_DOAR_CIFRE, valid: /^\d{1,5}$/,              eroare: "Port: cifre 1-65535" },
         { suffix: "f-min-len", filtru: null, valid: /^\d+$/, eroare: "Doar cifre pozitive" },
         { suffix: "f-max-len", filtru: null, valid: /^\d+$/, eroare: "Doar cifre pozitive" },
@@ -33,7 +33,6 @@
         return null;
     }
 
-    // NOU: Registru global în care reținem absolut toate popup-urile generate
     var _toate_popupurile = []; 
 
     function _obtine_popup(input_el) {
@@ -44,7 +43,6 @@
             document.body.appendChild(p);
             input_el._popup_el = p;
             
-            // Când un popup e creat, îl adăugăm în lista de curățenie
             _toate_popupurile.push({ input: input_el, popup: p });
         }
         return input_el._popup_el;
@@ -66,10 +64,8 @@
         p.style.display = 'block';
     }
 
-    /* Declanșează validarea pe butonul "Cauta" + Ascunde la click în meniu */
     document.addEventListener('click', function (e) {
         
-        // Dacă utilizatorul a dat click pe sidebar/meniu, ascundem fortat toate erorile
         var click_pe_meniu = e.target.closest('#app-sidebar');
         if (click_pe_meniu) {
             _toate_popupurile.forEach(function(item) {
@@ -78,7 +74,6 @@
             return;
         }
 
-        // Declanșează validarea doar la apăsarea butonului "Caută"
         if (e.target && e.target.tagName === 'BUTTON' && e.target.textContent.includes('Cauta')) {
             var inputs = document.querySelectorAll('input[data-hids-validat="1"]');
             inputs.forEach(function (inp) {
@@ -121,7 +116,6 @@
             }
         });
 
-        // Ascunde eroarea CÂND DAI CLICK în căsuță pentru a o corecta
         input_el.addEventListener('focus', function () {
             afiseaza_eroare(this, '');
         });
@@ -129,9 +123,6 @@
 
     var observer = new MutationObserver(function (mutations) {
         
-        // NOU: GARBAGE COLLECTION
-        // La fiecare schimbare pe ecran, căutăm popup-urile rămase active (block).
-        // Dacă input-ul lor a fost distrus (nu mai e in document.body), ascundem popup-ul.
         _toate_popupurile.forEach(function(item) {
             if (item.popup.style.display === 'block' && !document.body.contains(item.input)) {
                 item.popup.style.display = 'none';
